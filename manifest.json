@@ -1,0 +1,9 @@
+{
+  "id": "haolanguagelearn",
+  "name": "HaoLanguageLearn",
+  "version": "2.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "English decks, phonetics, bilingual examples and a mistake notebook. Paid, 7-day trial.",
+  "author": "Hao",
+  "isDesktopOnly": false
+}
