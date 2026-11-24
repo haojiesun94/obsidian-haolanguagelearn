@@ -1,8 +1,8 @@
-.hll-inner button { box-shadow: none !important; }
-.hll-inner .hll-star, .hll-inner .hll-sound, .hll-inner .hll-nav {
-  border: none !important; background: transparent !important;
-  padding: 2px 6px !important; height: auto !important; min-height: 0 !important;
-  line-height: 1 !important; box-shadow: none !important;
+.hll-inner button { box-shadow: none; }
+.hll-inner button.hll-star, .hll-inner button.hll-sound, .hll-inner button.hll-nav {
+  border: none; background: transparent;
+  padding: 2px 6px; height: auto; min-height: 0;
+  line-height: 1; box-shadow: none;
 }
 .hll-pos {
   display: inline-block; min-width: 1.15em; text-align: center;
@@ -17,55 +17,55 @@
 .hll-card .hll-star.is-on svg { fill: #d9a441; stroke: #d9a441; }
 
 /* ================= HaoLanguageLearn ================= */
-.hll-root { padding: 0 !important; }
+.hll-root.hll-root { padding: 0; }
 .hll-inner { padding: 18px 26px 40px; }
 
 .hll-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: nowrap; }
 .hll-title { margin: 0; font-size: 1.5em; font-weight: 800; white-space: nowrap; }
-.hll-reload {
+.hll-inner button.hll-reload {
   cursor: pointer; border: 1px solid var(--background-modifier-border);
   background: transparent; color: var(--text-faint); padding: 1px 8px;
 }
-.hll-reload:hover { color: var(--text-accent); border-color: var(--text-accent); }
-.hll-ver {
+.hll-inner button.hll-reload:hover { color: var(--text-accent); border-color: var(--text-accent); }
+.hll-inner button.hll-ver {
   font-size: 0.68em; color: var(--text-faint);
   padding: 1px 7px; border-radius: 999px;
   border: 1px solid var(--background-modifier-border);
 }
 .hll-sub { font-size: 0.76em; color: var(--text-faint); white-space: nowrap; }
-.hll-tabs { margin-left: auto; display: flex; gap: 8px; }
-.hll-tab {
+.hll-inner button.hll-tabs { margin-left: auto; display: flex; gap: 8px; }
+.hll-inner button.hll-tab {
   padding: 6px 16px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--background-modifier-border);
   background: transparent; color: var(--text-muted); font-size: 0.82em;
 }
-.hll-tab.is-active { background: var(--text-accent); color: #fff; border-color: var(--text-accent); }
+.hll-inner button.hll-tab.is-active { background: var(--text-accent); color: #fff; border-color: var(--text-accent); }
 
 .hll-seg {
   display: inline-flex; padding: 2px; border-radius: 999px;
   background: var(--background-modifier-border);
   gap: 2px;
 }
-.hll-seg-btn {
+.hll-inner button.hll-seg-btn {
   border: none; background: transparent; cursor: pointer;
   font-size: 0.76em; color: var(--text-muted);
   padding: 3px 14px; border-radius: 999px;
 }
-.hll-seg-btn.is-active { background: var(--text-accent); color: #fff; font-weight: 600; }
+.hll-inner button.hll-seg-btn.is-active { background: var(--text-accent); color: #fff; font-weight: 600; }
 
 /* 卡片顶部导航 */
-.hll-nav {
+.hll-inner button.hll-nav {
   border: none; background: transparent; cursor: pointer;
   font-size: 1.1em; color: var(--text-faint); padding: 0 6px; line-height: 1;
 }
-.hll-nav:hover:not(:disabled) { color: var(--text-accent); }
-.hll-nav:disabled { opacity: 0.25; cursor: default; }
-.hll-star {
+.hll-inner button.hll-nav:hover:not(:disabled) { color: var(--text-accent); }
+.hll-inner button.hll-nav:disabled { opacity: 0.25; cursor: default; }
+.hll-inner button.hll-star {
   margin-left: auto; border: none; background: transparent; cursor: pointer;
   font-size: 1.05em; color: var(--text-faint); padding: 2px 6px; border-radius: 8px;
 }
-.hll-star:hover { background: var(--background-modifier-hover); color: #d9a441; }
-.hll-star.is-on { color: #d9a441; }
+.hll-inner button.hll-star:hover { background: var(--background-modifier-hover); color: #d9a441; }
+.hll-inner button.hll-star.is-on { color: #d9a441; }
 
 /* 悬浮看释义 */
 .hll-answer.is-ghost { opacity: 0; transition: opacity 0.1s ease; }
@@ -82,13 +82,13 @@
 .hll-level { font-size: 0.74em; color: var(--text-faint); }
 .hll-muted { font-size: 0.76em; color: var(--text-faint); }
 
-.hll-btn {
+.hll-inner button.hll-btn {
   padding: 6px 14px; border-radius: 999px; cursor: pointer; font-size: 0.8em;
   border: 1px solid var(--background-modifier-border); background: transparent; color: var(--text-muted);
 }
-.hll-btn:hover { border-color: var(--text-accent); color: var(--text-accent); }
-.hll-btn.is-primary { background: var(--text-accent); color: #fff; border-color: var(--text-accent); }
-.hll-btn.is-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.hll-inner button.hll-btn:hover { border-color: var(--text-accent); color: var(--text-accent); }
+.hll-inner button.hll-btn.is-primary { background: var(--text-accent); color: #fff; border-color: var(--text-accent); }
+.hll-inner button.hll-btn.is-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .hll-progress { height: 6px; border-radius: 3px; background: var(--background-modifier-border); overflow: hidden; margin-bottom: 26px; }
 .hll-progress-fill { height: 100%; background: var(--text-accent); transition: width 0.25s ease; }
@@ -104,12 +104,12 @@
 }
 .hll-card-top { position: absolute; top: 16px; left: 20px; right: 16px; display: flex; align-items: center; }
 .hll-card-idx { font-size: 0.72em; color: var(--text-faint); letter-spacing: 1px; }
-.hll-sound {
+.hll-inner button.hll-sound {
   margin-left: 2px; border: none; background: transparent; cursor: pointer;
   font-size: 1.1em; opacity: 0.65; padding: 2px 6px; border-radius: 8px;
 }
-.hll-sound:hover { opacity: 1; background: var(--background-modifier-hover); }
-.hll-sound.is-small { font-size: 0.9em; }
+.hll-inner button.hll-sound:hover { opacity: 1; background: var(--background-modifier-hover); }
+.hll-inner button.hll-sound.is-small { font-size: 0.9em; }
 
 .hll-word { font-size: 3.2em; font-weight: 800; letter-spacing: -0.5px; line-height: 1.15; text-align: center; word-break: break-word; }
 .hll-ph { margin-top: 10px; font-size: 1.05em; color: var(--text-muted); font-family: "Cambria", Georgia, serif; }
@@ -148,12 +148,12 @@
 .hll-chip-q { color: var(--text-faint); }
 
 /* 语法 */
-.hll-cats { margin-bottom: 14px; }
-.hll-cat {
+.hll-inner button.hll-cats { margin-bottom: 14px; }
+.hll-inner button.hll-cat {
   padding: 5px 13px; border-radius: 999px; cursor: pointer; font-size: 0.76em;
   border: 1px solid var(--background-modifier-border); background: transparent; color: var(--text-muted);
 }
-.hll-cat.is-active { background: color-mix(in srgb, var(--text-accent) 16%, transparent); color: var(--text-accent); border-color: transparent; }
+.hll-inner button.hll-cat.is-active { background: color-mix(in srgb, var(--text-accent) 16%, transparent); color: var(--text-accent); border-color: transparent; }
 .hll-gram { display: flex; flex-direction: column; gap: 10px; }
 .hll-gram-row {
   border: 1px solid var(--background-modifier-border); border-radius: 14px;
@@ -196,11 +196,11 @@
 .hll-status-chips { margin-top: -6px; padding-top: 10px; border-top: 1px dashed var(--background-modifier-border); }
 .hll-status-chips .hll-cat { font-size: 0.74em; }
 .hll-gbar { margin: 14px 0 12px; }
-.hll-mini-link {
+.hll-inner button.hll-mini-link {
   border: none; background: transparent; cursor: pointer;
-  font-size: 0.74em; color: var(--text-faint); text-decoration: underline dotted;
+  font-size: 0.74em; color: var(--text-faint); border-bottom: 1px dotted var(--background-modifier-border); padding-bottom: 1px;
 }
-.hll-mini-link:hover { color: var(--text-accent); }
+.hll-inner button.hll-mini-link:hover { color: var(--text-accent); }
 
 .hll-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
@@ -241,50 +241,50 @@
 .hll-quiz-tag { font-size: 0.68em; color: var(--text-faint); margin-left: 8px; }
 
 /* ── 覆盖 Obsidian/主题对 button 的默认皮肤，保证设计一致 ── */
-.hll-inner .hll-btn, .hll-inner .hll-tab, .hll-inner .hll-cat, .hll-inner .hll-ver {
-  box-shadow: none !important;
+.hll-inner button.hll-btn, .hll-inner button.hll-tab, .hll-inner button.hll-cat, .hll-inner button.hll-ver {
+  box-shadow: none;
 }
-.hll-inner .hll-btn {
-  border: 1px solid var(--background-modifier-border) !important;
-  background: transparent !important; color: var(--text-muted) !important;
+.hll-inner button.hll-btn {
+  border: 1px solid var(--background-modifier-border);
+  background: transparent; color: var(--text-muted);
 }
-.hll-inner .hll-btn.is-primary {
-  border-color: var(--text-accent) !important;
-  background: var(--text-accent) !important; color: #fff !important;
+.hll-inner button.hll-btn.is-primary {
+  border-color: var(--text-accent);
+  background: var(--text-accent); color: #fff;
 }
-.hll-inner .hll-btn:disabled { opacity: 0.45 !important; }
-.hll-inner .hll-tab {
-  border: 1px solid var(--background-modifier-border) !important;
-  background: transparent !important; color: var(--text-muted) !important;
+.hll-inner button.hll-btn:disabled { opacity: 0.45; }
+.hll-inner button.hll-tab {
+  border: 1px solid var(--background-modifier-border);
+  background: transparent; color: var(--text-muted);
 }
-.hll-inner .hll-tab.is-active {
-  border-color: var(--text-accent) !important;
-  background: var(--text-accent) !important; color: #fff !important;
+.hll-inner button.hll-tab.is-active {
+  border-color: var(--text-accent);
+  background: var(--text-accent); color: #fff;
 }
-.hll-inner .hll-cat {
-  border: 1px solid var(--background-modifier-border) !important;
-  background: transparent !important; color: var(--text-muted) !important;
+.hll-inner button.hll-cat {
+  border: 1px solid var(--background-modifier-border);
+  background: transparent; color: var(--text-muted);
 }
-.hll-inner .hll-cat.is-active {
-  border-color: var(--text-accent) !important;
-  background: var(--text-accent) !important; color: #fff !important;
+.hll-inner button.hll-cat.is-active {
+  border-color: var(--text-accent);
+  background: var(--text-accent); color: #fff;
 }
-.hll-inner .hll-seg-btn { border: none !important; background: transparent !important; }
-.hll-inner .hll-seg-btn.is-active { background: var(--text-accent) !important; color: #fff !important; }
-.hll-inner .hll-mini-link { border: none !important; background: transparent !important; }
+.hll-inner button.hll-seg-btn { border: none; background: transparent; }
+.hll-inner button.hll-seg-btn.is-active { background: var(--text-accent); color: #fff; }
+.hll-inner button.hll-mini-link { border: none; background: transparent; }
 
 /* 重置/图标按钮 */
-.hll-inner .hll-icon-btn {
-  border: none !important; background: transparent !important; box-shadow: none !important;
-  padding: 3px 7px !important; height: auto !important; min-height: 0 !important;
+.hll-inner button.hll-icon-btn {
+  border: none; background: transparent; box-shadow: none;
+  padding: 3px 7px; height: auto; min-height: 0;
   color: var(--text-faint); cursor: pointer; line-height: 1;
 }
-.hll-inner .hll-icon-btn:hover { color: var(--text-accent); }
-.hll-inner .hll-icon-btn svg { width: 16px; height: 16px; }
-.hll-inner .hll-btn.is-danger {
-  border-color: #c96a5c !important; color: #c96a5c !important; background: transparent !important;
+.hll-inner button.hll-icon-btn:hover { color: var(--text-accent); }
+.hll-inner button.hll-icon-btn svg { width: 16px; height: 16px; }
+.hll-inner button.hll-btn.is-danger {
+  border-color: #c96a5c; color: #c96a5c; background: transparent;
 }
-.hll-inner .hll-btn.is-danger:hover:not(:disabled) { background: #c96a5c !important; color: #fff !important; }
+.hll-inner button.hll-btn.is-danger:hover:not(:disabled) { background: #c96a5c; color: #fff; }
 
 /* 重置确认弹框 */
 .hll-confirm h3 { margin: 4px 0 10px; font-size: 1.05em; }
@@ -292,9 +292,9 @@
 .hll-modal-bar { display: flex; justify-content: flex-end; gap: 10px; }
 
 /* 按钮不许被挤成两行：不换行、不收缩；整条 bar 允许整体换行 */
-.hll-inner .hll-btn, .hll-inner .hll-tab, .hll-inner .hll-cat,
-.hll-inner .hll-seg-btn, .hll-inner .hll-mini-link, .hll-inner .hll-badge, .hll-inner .hll-level {
-  white-space: nowrap !important; flex: 0 0 auto;
+.hll-inner button.hll-btn, .hll-inner button.hll-tab, .hll-inner button.hll-cat,
+.hll-inner button.hll-seg-btn, .hll-inner button.hll-mini-link, .hll-inner .hll-badge, .hll-inner .hll-level {
+  white-space: nowrap; flex: 0 0 auto;
 }
 .hll-bar { flex-wrap: wrap; row-gap: 8px; }
 
@@ -313,13 +313,13 @@
   font-size: 0.92em; line-height: 1.6; color: var(--text-normal);
 }
 .hll-ex-text { flex: 0 1 auto; }
-.hll-inner .hll-ex-sound {
-  border: none !important; background: transparent !important; box-shadow: none !important;
-  padding: 0 4px !important; height: auto !important; min-height: 0 !important;
+.hll-inner button.hll-ex-sound {
+  border: none; background: transparent; box-shadow: none;
+  padding: 0 4px; height: auto; min-height: 0;
   color: var(--text-faint); cursor: pointer; line-height: 1.6;
 }
-.hll-inner .hll-ex-sound:hover { color: var(--text-accent); }
-.hll-inner .hll-ex-sound svg { width: 14px; height: 14px; }
+.hll-inner button.hll-ex-sound:hover { color: var(--text-accent); }
+.hll-inner button.hll-ex-sound svg { width: 14px; height: 14px; }
 .hll-ex-zh { margin-top: 3px; font-size: 0.86em; line-height: 1.7; color: var(--text-muted); }
 .hll-ex-more { align-self: center; margin-top: 4px; }
 
@@ -362,14 +362,14 @@
 .hll-wx-k { font-size: 0.78em; color: var(--text-muted); }
 .hll-wx-v { font-size: 1.16em; font-weight: 700; letter-spacing: 1px; color: var(--text-normal); font-variant-numeric: tabular-nums; }
 .hll-license-form { display: flex; gap: 8px; }
-.hll-inner .hll-license-input {
-  flex: 1; padding: 8px 12px !important; border-radius: 10px !important;
-  border: 1px solid var(--background-modifier-border) !important;
-  background: var(--background-primary) !important;
-  font-size: 0.95em !important; letter-spacing: 2px; text-align: center;
-  font-variant-numeric: tabular-nums; height: auto !important;
+.hll-inner textarea.hll-license-input, .hll-inner input.hll-license-input {
+  flex: 1; padding: 8px 12px; border-radius: 10px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  font-size: 0.95em; letter-spacing: 2px; text-align: center;
+  font-variant-numeric: tabular-nums; height: auto;
 }
-.hll-inner .hll-license-input:focus { border-color: var(--text-accent) !important; }
+.hll-inner textarea.hll-license-input, .hll-inner input.hll-license-input:focus { border-color: var(--text-accent); }
 .hll-license-err { min-height: 1.4em; margin-top: 8px; font-size: 0.78em; color: #c05a4c; }
 .hll-license-foot { margin-top: 12px; font-size: 0.72em; color: var(--text-faint); line-height: 1.7; }
 
@@ -377,13 +377,13 @@
 .hll-set-desc { color: var(--text-muted); font-size: 0.85em; }
 
 /* ── 试用 ── */
-.hll-inner .hll-trial-tag {
-  margin-left: 10px; border: 1px solid color-mix(in srgb, var(--text-accent) 45%, transparent) !important;
-  background: color-mix(in srgb, var(--text-accent) 9%, transparent) !important;
-  color: var(--text-accent) !important; border-radius: 999px; padding: 2px 10px !important;
-  font-size: 0.7em; cursor: pointer; white-space: nowrap; height: auto !important;
+.hll-inner button.hll-trial-tag {
+  margin-left: 10px; border: 1px solid color-mix(in srgb, var(--text-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--text-accent) 9%, transparent);
+  color: var(--text-accent); border-radius: 999px; padding: 2px 10px;
+  font-size: 0.7em; cursor: pointer; white-space: nowrap; height: auto;
 }
-.hll-inner .hll-trial-tag:hover { background: color-mix(in srgb, var(--text-accent) 18%, transparent) !important; }
+.hll-inner button.hll-trial-tag:hover { background: color-mix(in srgb, var(--text-accent) 18%, transparent); }
 .hll-trial-bar {
   display: flex; align-items: center; justify-content: center; gap: 10px;
   margin: 0 0 14px; padding: 9px 12px; border-radius: 12px;
@@ -397,9 +397,9 @@
   background: color-mix(in srgb, #c05a4c 10%, transparent); color: #a94a3d; text-align: left;
 }
 
-.hll-inner .hll-license-input {
+.hll-inner textarea.hll-license-input, .hll-inner input.hll-license-input {
   resize: vertical; min-height: 52px; line-height: 1.6;
   letter-spacing: 0.5px; text-align: left; word-break: break-all;
-  font-family: var(--font-monospace, monospace); font-size: 0.78em !important;
+  font-family: var(--font-monospace, monospace); font-size: 0.78em;
 }
 .hll-license-filerow { margin-top: 10px; display: flex; justify-content: center; }
