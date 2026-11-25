@@ -199,6 +199,28 @@ const DEFAULT_SETTINGS = {
   trialDays: 7,          // 未激活试用天数
 };
 
+// 艾宾浩斯复习节奏：隔天 → 隔周 → 隔月 → 三月（天）
+const SRS_STEPS = [1, 7, 30, 90];
+const SRS_LABELS = ["隔天", "隔周", "隔月", "三月"];
+
+function dateStr(d) {
+  const x = d || new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`;
+}
+
+function addDays(iso, n) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return dateStr(d);
+}
+
+function daysBetween(fromIso, toIso) {
+  const a = new Date(`${fromIso}T00:00:00`).getTime();
+  const b = new Date(`${toIso}T00:00:00`).getTime();
+  return Math.round((b - a) / 86400000);
+}
+
 const EMPTY_PROGRESS = {
   cursor: 1, mastered: {}, done: {}, quiz: {}, wrong: {}, lastGroup: 0,
 };
@@ -518,13 +540,32 @@ class HaoLanguageLearnView extends ItemView {
       left.createSpan({ cls: "hll-level", text: group.level });
       left.createSpan({ cls: "hll-muted", text: `${mastered.size}/${group.words.length} 已掌握` });
     } else {
-      left.createSpan({ cls: "hll-muted", text: "复习：从学过的词里随机抽，不影响卡组进度" });
+      const dc = this.plugin.dueCounts();
+      left.createSpan({ cls: "hll-badge", text: `今日待复习 ${dc.total} 词` });
+      [0, 1, 2, 3].forEach((i) => {
+        if (!dc.steps[i]) return;
+        left.createSpan({ cls: "hll-level", text: `${SRS_LABELS[i]} ${dc.steps[i]}` });
+      });
+      left.createSpan({ cls: "hll-muted", text: dc.total ? `逾期 ${this.plugin.dueList().filter((d) => d.overdue > 0).length} 词 · 都会在卡片上标出来` : `明天还有 ${dc.tomorrow} 词到期` });
     }
     const right = bar.createDiv({ cls: "hll-bar-right" });
     const resetBtn = right.createEl("button", { cls: "hll-icon-btn" });
     setIcon(resetBtn, "rotate-ccw");
     resetBtn.title = `重学卡组 #${gid}（清空这组进度）`;
     resetBtn.onclick = () => this.confirmReset([gid], `卡组 #${gid} ${group.level}`);
+    const dcNow = this.plugin.dueCounts();
+    if (dcNow.total > 0 && this.wordMode === "study") {
+      const dueBtn = right.createEl("button", { cls: "hll-btn is-primary", text: `今日复习 ${dcNow.total}` });
+      dueBtn.title = "按艾宾浩斯曲线，这些词今天该复习了";
+      dueBtn.onclick = () => {
+        this.wordMode = "review";
+        this.mode = "cards";
+        this.queue = [];
+        this.idx = 0;
+        this.currentGroupId = 0;
+        this.render();
+      };
+    }
     const wrongBtn = right.createEl("button", {
       cls: "hll-btn" + (wrongCount ? "" : ""),
       text: `错题本 ${wrongCount}`,
@@ -547,12 +588,14 @@ class HaoLanguageLearnView extends ItemView {
     if (this.mode === "cards") {
       let pool;
       if (this.wordMode === "review") {
+        // 只练「今天到期」的词（隔天 / 隔周 / 隔月 / 三月），逾期优先
+        const byWord = new Map();
+        groups.forEach((g) => g.words.forEach((w) => byWord.set(w.w, { ...w, gid: g.id })));
         pool = [];
-        groups.forEach((g) => {
-          const mset = new Set(prog.mastered[g.id] || []);
-          g.words.forEach((w) => { if (mset.has(w.w)) pool.push({ ...w, gid: g.id }); });
+        this.plugin.dueList().forEach((d) => {
+          const w = byWord.get(d.word);
+          if (w) pool.push({ ...w, due: d.next, overdue: d.overdue, stage: d.stage });
         });
-        pool.sort(() => Math.random() - 0.5);
       } else {
         pool = group.words.filter((w) => !mastered.has(w.w)).map((w) => ({ ...w, gid }));
       }
@@ -567,8 +610,11 @@ class HaoLanguageLearnView extends ItemView {
 
     if (this.wordMode === "review" && this.mode === "cards" && this.queue.length === 0) {
       const box = stage.createDiv({ cls: "hll-done" });
-      box.createDiv({ cls: "hll-done-title", text: "还没有可复习的词" });
-      box.createDiv({ cls: "hll-muted", text: "先学一组、标记一些「记住了」，这里就会攒出复习池。" });
+      const dcEmpty = this.plugin.dueCounts();
+      box.createDiv({ cls: "hll-done-title", text: dcEmpty.scheduled ? "今天没有到期的词" : "还没有可复习的词" });
+      box.createDiv({ cls: "hll-muted", text: dcEmpty.scheduled
+        ? `按艾宾浩斯曲线，明天有 ${dcEmpty.tomorrow} 词到期；已排期 ${dcEmpty.scheduled} 词。`
+        : "先学一组、标记一些「记住了」，这里就会攒出复习池。" });
       const b = box.createEl("button", { cls: "hll-btn is-primary", text: "回到学习" });
       b.onclick = () => { this.wordMode = "study"; this.queue = []; this.currentGroupId = 0; this.render(); };
     } else if (this.mode === "quiz") { this.drawQuiz(stage, group, gid); }
@@ -663,6 +709,13 @@ class HaoLanguageLearnView extends ItemView {
     setIcon(sound, "volume-2");
     sound.title = "发音";
 
+    if (!isStudy) {
+      const st = Math.min(Number(word.stage) || 0, 3);
+      const due = card.createDiv({ cls: "hll-due" });
+      due.createSpan({ cls: "hll-due-step", text: SRS_LABELS[st] });
+      due.createSpan({ cls: "hll-due-date", text: word.overdue > 0 ? `逾期 ${word.overdue} 天` : "今天到期" });
+    }
+
     card.createDiv({ cls: "hll-word", text: word.w });
     if (this.plugin.data.settings.showPhonetic && word.ph) {
       card.createDiv({ cls: "hll-ph", text: word.ph });
@@ -731,19 +784,26 @@ class HaoLanguageLearnView extends ItemView {
         this.render();
       };
     } else {
-      const skip = actions.createEl("button", { cls: "hll-btn", text: "不再复习这个" });
-      const known = actions.createEl("button", { cls: "hll-btn is-primary", text: "下一个 ›" });
+      const srsNow = (this.plugin.data.progress.srs || {})[word.w] || { stage: 0 };
+      const nextStage = Math.min((Number(srsNow.stage) || 0) + 1, SRS_STEPS.length - 1);
+      const forget = actions.createEl("button", { cls: "hll-btn", text: "忘了 · 明天再来" });
+      const remember = actions.createEl("button", { cls: "hll-btn is-primary", text: `记得 · ${SRS_STEPS[nextStage]} 天后` });
+      const skip = actions.createEl("button", { cls: "hll-mini-link", text: "不再复习" });
+      const advance = async (ok) => {
+        this.plugin.reviewAnswer(word.w, ok);
+        await this.plugin.saveData(this.plugin.data);
+        this.revealedCard = false;
+        this.queue.splice(this.idx, 1);
+        if (this.idx >= this.queue.length) this.idx = 0;
+        this.render();
+      };
+      forget.onclick = () => advance(false);
+      remember.onclick = () => advance(true);
       skip.onclick = () => {
         this.plugin.unmarkMastered(word.gid, word.w);
         this.plugin.removeWrong(word.w);
         this.queue.splice(this.idx, 1);
         if (this.idx >= this.queue.length) this.idx = 0;
-        this.render();
-      };
-      known.onclick = () => {
-        if (this.idx < this.queue.length - 1) this.idx += 1;
-        else this.idx = 0;
-        this.revealedCard = false;
         this.render();
       };
     }
@@ -825,6 +885,7 @@ class HaoLanguageLearnView extends ItemView {
         if (right) {
           this.quizRight += 1;
           if (word.fromWrong) this.plugin.removeWrong(word.w);       // 错题答对 → 出书
+          if (this.plugin.isMastered(word.w)) this.plugin.reviewAnswer(word.w, true);  // 抽查答对 → 下次隔更久
         } else {
           this.plugin.unmarkMastered(word.gid, word.w);
           if (word.gid) this.plugin.addWrong(word.w, word.gid);      // 答错 → 进书
@@ -870,11 +931,25 @@ class HaoLanguageLearnView extends ItemView {
 
     // 统计
     const stats = parent.createDiv({ cls: "hll-stats" });
+    const dcStat = this.plugin.dueCounts();
     [["总卡组", groups.length + " 组"], ["总词量", wordTotal + " 词"],
-     ["已练卡组", doneCount + " 组"], ["已掌握", masteredCount + " 词"]].forEach(([k, v]) => {
-      const box = stats.createDiv({ cls: "hll-stat" });
+     ["已练卡组", doneCount + " 组"], ["已掌握", masteredCount + " 词"],
+     ["今日待复习", dcStat.total + " 词"]].forEach(([k, v]) => {
+      const box = stats.createDiv({ cls: "hll-stat" + (k === "今日待复习" ? " is-click" : "") });
       box.createSpan({ cls: "hll-stat-k", text: k });
       box.createSpan({ cls: "hll-stat-v", text: v });
+      if (k === "今日待复习") {
+        box.title = `隔天 ${dcStat.steps[0]} · 隔周 ${dcStat.steps[1]} · 隔月 ${dcStat.steps[2]} · 三月 ${dcStat.steps[3]}`;
+        box.onclick = () => {
+          this.wordMode = "review";
+          this.mode = "cards";
+          this.queue = [];
+          this.idx = 0;
+          this.currentGroupId = 0;
+          this.tab = "words";
+          this.render();
+        };
+      }
     });
 
     // 难度筛选
@@ -1052,6 +1127,8 @@ module.exports = class HaoLanguageLearn extends Plugin {
     const legacy = (raw && raw.progress) || null;
     this.data.progress = Object.assign({}, DEFAULT_DATA.progress, fromFile || legacy || {});
     if (!fromFile && legacy) this._writeProgress(this.data.progress);
+    const migrated = this.migrateSrs();          // 老进度补复习排期
+    if (migrated) this._writeProgress(this.data.progress);
 
     this._wordCache = null;
     this._gramCache = null;
@@ -1090,6 +1167,22 @@ module.exports = class HaoLanguageLearn extends Plugin {
           }
         } catch (e) { /* 落到下面的提示 */ }
         new Notice("没法自动重载：命令面板执行「Reload app without saving」（Ctrl+R）即可");
+      },
+    });
+    this.addCommand({
+      id: "review-today",
+      name: "今日复习（艾宾浩斯曲线）",
+      callback: async () => {
+        await this.activateView();
+        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
+        const v = leaf && leaf.view;
+        if (!v) return;
+        v.wordMode = "review";
+        v.mode = "cards";
+        v.queue = [];
+        v.idx = 0;
+        v.currentGroupId = 0;
+        v.render();
       },
     });
     this.addCommand({
@@ -1229,6 +1322,99 @@ module.exports = class HaoLanguageLearn extends Plugin {
     });
   }
 
+  // ---- 艾宾浩斯复习（SRS）----
+  _srs() {
+    const p = this.data.progress;
+    if (!p.srs || typeof p.srs !== "object") p.srs = {};
+    return p.srs;
+  }
+
+  // 老进度没有排期：已掌握的词补一条今天到期的记录（一次性）
+  migrateSrs() {
+    const srs = this._srs();
+    const p = this.data.progress;
+    const t = dateStr();
+    let n = 0;
+    Object.keys(p.mastered || {}).forEach((gid) => {
+      (p.mastered[gid] || []).forEach((w) => {
+        if (srs[w]) return;
+        srs[w] = { gid: Number(gid), stage: 0, last: null, next: t, reps: 0, lapses: 0 };
+        n += 1;
+      });
+    });
+    return n;
+  }
+
+  // 刚学会：第一次复习排在明天
+  scheduleMaster(gid, word) {
+    const srs = this._srs();
+    if (srs[word]) return srs[word];
+    const t = dateStr();
+    srs[word] = { gid: Number(gid) || 0, stage: 0, last: t, next: addDays(t, SRS_STEPS[0]), reps: 0, lapses: 0 };
+    return srs[word];
+  }
+
+  // 复习一次：记得 → 台阶 +1；忘了 → 回到隔天
+  reviewAnswer(word, ok) {
+    const srs = this._srs();
+    const e = srs[word] || (srs[word] = { gid: 0, stage: 0, last: null, next: dateStr(), reps: 0, lapses: 0 });
+    const t = dateStr();
+    if (ok) {
+      e.stage = Math.min((Number(e.stage) || 0) + 1, SRS_STEPS.length - 1);
+      e.reps = (Number(e.reps) || 0) + 1;
+    } else {
+      e.stage = 0;
+      e.lapses = (Number(e.lapses) || 0) + 1;
+    }
+    e.last = t;
+    e.next = addDays(t, SRS_STEPS[e.stage]);
+    return e;
+  }
+
+  isMastered(word) {
+    const m = this.data.progress.mastered || {};
+    return Object.keys(m).some((g) => (m[g] || []).includes(word));
+  }
+
+  dropSrs(word) {
+    const srs = this._srs();
+    if (srs[word]) delete srs[word];
+  }
+
+  // 今天到期（含逾期），按到期日早的在前
+  dueList() {
+    const srs = this._srs();
+    const t = dateStr();
+    const out = [];
+    Object.keys(srs).forEach((w) => {
+      const e = srs[w] || {};
+      const next = e.next || t;
+      if (next <= t) out.push({ word: w, gid: e.gid || 0, stage: Math.min(Number(e.stage) || 0, 3),
+                                next, overdue: Math.max(0, daysBetween(next, t)) });
+    });
+    out.sort((a, b) => (a.next === b.next ? a.word.localeCompare(b.word) : (a.next < b.next ? -1 : 1)));
+    return out;
+  }
+
+  dueCounts() {
+    const srs = this._srs();
+    const t = dateStr();
+    const tm = addDays(t, 1);
+    const out = { total: 0, steps: [0, 0, 0, 0], tomorrow: 0, scheduled: 0 };
+    Object.keys(srs).forEach((w) => {
+      const e = srs[w] || {};
+      const next = e.next || t;
+      out.scheduled += 1;
+      if (next <= t) {
+        out.total += 1;
+        out.steps[Math.min(Number(e.stage) || 0, 3)] += 1;
+      } else if (next === tm) {
+        out.tomorrow += 1;
+      }
+    });
+    return out;
+  }
+
   // 内嵌词库（社区目录安装只拿得到 manifest/main/styles 三个文件，没有 data/ 目录）
   async _embedded(name) {
     const all = EMBEDDED_DATA;
@@ -1293,12 +1479,14 @@ module.exports = class HaoLanguageLearn extends Plugin {
     const p = this.data.progress;
     p.mastered[gid] = p.mastered[gid] || [];
     if (!p.mastered[gid].includes(word)) p.mastered[gid].push(word);
+    this.scheduleMaster(gid, word);   // 新学会 → 排到明天第一次复习
     this.saveData(this.data);
   }
 
   unmarkMastered(gid, word) {
     const p = this.data.progress;
     p.mastered[gid] = (p.mastered[gid] || []).filter((w) => w !== word);
+    this.dropSrs(word);              // 不再是「已掌握」，排期一起撤
     this.saveData(this.data);
   }
 
