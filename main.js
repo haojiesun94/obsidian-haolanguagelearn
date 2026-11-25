@@ -187,12 +187,14 @@ function formatCode(text) {
 
 
 const DEFAULT_SETTINGS = {
-  wordFile: "领域/学习/英语/单词库.json",
-  grammarFile: "领域/学习/英语/语法库.json",
-  exampleFile: "领域/学习/英语/例句库.json",   // 例句库（英文 + 中文翻译）
+  // 内容路径默认留空：留空 = 用插件自带（目录安装读内嵌数据，zip 安装读插件 data/）。
+  // 只有想换成自己的词库时才填。
+  wordFile: "",
+  grammarFile: "",
+  exampleFile: "",
+  sceneFile: "",
+  phraseFile: "",
   progressFile: "领域/学习/英语/学习进度.json",  // 学习进度（随 vault 同步；data.json 只放本机授权）
-  sceneFile: "领域/学习/英语/场景库.json",      // 场景英语：50 个生活场景 + 双语句子
-  phraseFile: "领域/学习/英语/短语库.json",     // 常用短语：动词搭配与固定表达
   autoSpeak: false,      // 卡片出现时自动读一遍
   showPhonetic: true,    // 卡片上是否显示音标
   showMeaning: true,     // 卡片上是否显示中文释义（可随时「收起」）
@@ -1791,6 +1793,39 @@ module.exports = class HaoLanguageLearn extends Plugin {
   }
 
   // ---- 艾宾浩斯复习（SRS）----
+  // 当前能读到哪些内容（给设置页显示「装完即用」）
+  async dataSummary() {
+    const out = { words: 0, grammar: 0, examples: 0, scenes: 0, sceneSentences: 0, phrases: 0, from: "插件自带" };
+    try {
+      const w = await this.loadWords();
+      if (w && w.groups) out.words = w.groups.reduce((n, g) => n + (g.words || []).length, 0);
+    } catch (e) { /* 忽略 */ }
+    try {
+      const g = await this.loadGrammar();
+      if (g && g.items) out.grammar = g.items.length;
+    } catch (e) { /* 忽略 */ }
+    try {
+      const ex = await this.loadExamples();
+      if (ex) out.examples = Object.keys(ex).length;
+    } catch (e) { /* 忽略 */ }
+    try {
+      const sc = await this.loadScenes();
+      if (sc && sc.scenarios) {
+        out.scenes = sc.scenarios.length;
+        out.sceneSentences = sc.scenarios.reduce((n, x) => n + (x.sentences || []).length, 0);
+      }
+    } catch (e) { /* 忽略 */ }
+    try {
+      const ph = await this.loadPhrases();
+      if (ph && ph.phrases) out.phrases = ph.phrases.length;
+    } catch (e) { /* 忽略 */ }
+    const st = this.data.settings || {};
+    if ([st.wordFile, st.grammarFile, st.exampleFile, st.sceneFile, st.phraseFile].some((x) => String(x || "").trim())) {
+      out.from = "部分自定义";
+    }
+    return out;
+  }
+
   // ---- 常用短语 ----
   async loadPhrases() {
     if (this._phraseCache) return this._phraseCache;
@@ -2251,27 +2286,29 @@ class HaoLangSettingTab extends PluginSettingTab {
         }));
     }
     containerEl.createEl("h3", { text: "学习内容" });
-    new Setting(containerEl).setName("单词库路径")
-      .setDesc("JSON：{ meta, groups: [{id, level, words:[{w,ph,zh}]}] }")
-      .addText((t) => t.setValue(this.plugin.data.settings.wordFile).onChange(async (v) => {
-        this.plugin.data.settings.wordFile = v.trim();
-        this.plugin._wordCache = null;
+    containerEl.createEl("p", { cls: "hll-set-desc",
+      text: "内容全部随插件自带：5000 词、41 条语法、双语例句、50 个场景、200 条短语。装完即用，不需要自己准备任何文件。" });
+    const dataLine = containerEl.createEl("p", { cls: "hll-set-desc", text: "正在检查自带数据…" });
+    Promise.resolve(this.plugin.dataSummary()).then((d) => {
+      dataLine.setText(`当前可用：单词 ${d.words} · 语法 ${d.grammar} 条 · 例句 ${d.examples} 词 · 场景 ${d.scenes} 个（${d.sceneSentences} 句）· 短语 ${d.phrases} 条　来源：${d.from}`);
+    }).catch(() => dataLine.setText("自带数据检查失败：打开插件面板即可确认是否可用"));
+
+    const pathRow = (name, key, desc, cache) => new Setting(containerEl).setName(name)
+      .setDesc(desc + "（留空 = 用插件自带）")
+      .addText((t) => t.setValue(this.plugin.data.settings[key] || "").onChange(async (v) => {
+        this.plugin.data.settings[key] = v.trim();
+        if (cache) this.plugin[cache] = null;
         await this.plugin.saveData(this.plugin.data);
+        this.display();
       }));
-    new Setting(containerEl).setName("语法库路径")
-      .addText((t) => t.setValue(this.plugin.data.settings.grammarFile).onChange(async (v) => {
-        this.plugin.data.settings.grammarFile = v.trim();
-        this.plugin._gramCache = null;
-        await this.plugin.saveData(this.plugin.data);
-      }));
+    pathRow("单词库", "wordFile", "换成自己的词库才填：{ meta, groups: [{id, level, words:[{w,ph,zh}]}] }", "_wordCache");
+    pathRow("语法库", "grammarFile", "换成自己的语法表才填：{ meta, items: [...] }", "_gramCache");
+    pathRow("例句库", "exampleFile", "换成自己的例句才填：{ \"word\": [[英文例句, 中文翻译], ...] }", "_exCache");
+    pathRow("场景库", "sceneFile", "换成自己的场景才填：{ meta, scenarios: [{name, sentences:[{en,zh}]}] }", "_sceneCache");
+    pathRow("短语库", "phraseFile", "换成自己的短语才填：{ meta, phrases: [{pattern, zh, ex:[{en,zh}]}] }", "_phraseCache");
     containerEl.createEl("p", { cls: "hll-set-desc",
       text: "例句语料来自 Tatoeba（tatoeba.org，CC-BY 2.0 FR），已统一转简体。" });
-    new Setting(containerEl).setName("例句库路径").setDesc("JSON：{ \"word\": [[英文例句, 中文翻译], ...] }；留空则不显示例句")
-      .addText((t) => t.setValue(this.plugin.data.settings.exampleFile || "").onChange(async (v) => {
-        this.plugin.data.settings.exampleFile = v.trim();
-        this.plugin._exCache = null;
-        await this.plugin.saveData(this.plugin.data);
-      }));
+
     new Setting(containerEl).setName("卡片上显示例句").setDesc("每张卡默认显示 1 句，可点「更多例句」展开")
       .addToggle((t) => t.setValue(this.plugin.data.settings.showExample !== false)
         .onChange(async (v) => { this.plugin.data.settings.showExample = v; await this.plugin.saveData(this.plugin.data); }));
