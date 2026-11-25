@@ -1227,10 +1227,9 @@ class HaoLanguageLearnView extends ItemView {
       this.currentGroupId = 0;
       this.render();
     };
-    const exp = acts.createEl("button", { cls: "hll-btn", text: "导出进度" });
-    exp.onclick = () => {
-      const r = this.plugin.exportProgress();
-      new Notice(r.ok ? `已导出 ${r.words} 个词 → ${r.name}` : `导出失败：${r.error}`);
+    const bak = acts.createEl("button", { cls: "hll-btn", text: "进度备份 / 迁移" });
+    bak.onclick = () => {
+      new Notice("在 设置 → HaoLanguageLearn → 学习进度 里导出或导入（含复习排期）");
     };
   }
 
@@ -1388,7 +1387,8 @@ module.exports = class HaoLanguageLearn extends Plugin {
       "产品": "HaoLanguageLearn",
       "格式": "hllp/1",
       "导出时间": `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-      "摘要": { "已掌握词": this._countMastered(prog), "过关组": Object.keys(prog.done || {}).length },
+      "摘要": { "已掌握词": this._countMastered(prog), "过关组": Object.keys(prog.done || {}).length,
+                "复习排期": Object.keys(prog.srs || {}).length },
       "进度": prog,
     };
     const name = `HaoLanguageLearn-学习进度-${stamp}.hllp`;
@@ -1412,8 +1412,8 @@ module.exports = class HaoLanguageLearn extends Plugin {
   // 只增不减：按组合并已掌握词、按词合并错题本，过关记录取缺失的
   mergeProgress(src) {
     const p = this.data.progress || (this.data.progress = Object.assign({}, EMPTY_PROGRESS));
-    ["mastered", "done", "quiz", "wrong"].forEach((k) => { if (!p[k] || typeof p[k] !== "object") p[k] = {}; });
-    const stat = { words: 0, groups: 0, wrongs: 0, done: 0 };
+    ["mastered", "done", "quiz", "wrong", "srs"].forEach((k) => { if (!p[k] || typeof p[k] !== "object") p[k] = {}; });
+    const stat = { words: 0, groups: 0, wrongs: 0, done: 0, srs: 0 };
     const sm = (src && src.mastered) || {};
     Object.keys(sm).forEach((gid) => {
       const arr = Array.isArray(sm[gid]) ? sm[gid] : [];
@@ -1437,6 +1437,20 @@ module.exports = class HaoLanguageLearn extends Plugin {
     });
     const sw = (src && src.wrong) || {};
     Object.keys(sw).forEach((w) => { if (!p.wrong[w]) { p.wrong[w] = sw[w]; stat.wrongs += 1; } });
+    // 复习排期：取学得更深的一份（stage 大）；同档取更早到期的，避免把该复习的词推后
+    const ss = (src && src.srs) || {};
+    Object.keys(ss).forEach((w) => {
+      const b = ss[w];
+      if (!b) return;
+      const a = p.srs[w];
+      if (!a) { p.srs[w] = b; stat.srs += 1; return; }
+      const sa = Number(a.stage) || 0;
+      const sb = Number(b.stage) || 0;
+      if (sb > sa || (sb === sa && String(b.next || "") < String(a.next || ""))) {
+        p.srs[w] = b;
+        stat.srs += 1;
+      }
+    });
     return stat;
   }
 
@@ -1468,6 +1482,7 @@ module.exports = class HaoLanguageLearn extends Plugin {
         if (stat.words) bits.push(`新增 ${stat.words} 个已掌握词（${stat.groups} 组）`);
         if (stat.done) bits.push(`补 ${stat.done} 组过关`);
         if (stat.wrongs) bits.push(`错题 +${stat.wrongs}`);
+        if (stat.srs) bits.push(`复习排期 ${stat.srs}`);
         new Notice(bits.length ? `导入完成：${bits.join("，")}` : "导入完成：没有比本机更新的进度");
       } catch (e) {
         new Notice("导入失败：这不是本插件导出的进度文件");
@@ -1932,8 +1947,10 @@ class HaoLangSettingTab extends PluginSettingTab {
         this.plugin.data.settings.progressFile = v.trim();
         await this.plugin.saveData(this.plugin.data);
       }));
+    containerEl.createEl("p", { cls: "hll-set-desc",
+      text: "备份 / 迁移入口只有这里：导出文件含 已掌握词 + 过关记录 + 抽查成绩 + 错题本 + 复习排期，另一台电脑导入即可接着学。" });
     new Setting(containerEl).setName("导出学习进度")
-      .setDesc("生成一个 .hllp 文件（含已掌握词、过关记录、抽查成绩、错题本），发到另一台电脑后导入")
+      .setDesc("生成 .hllp 文件（含复习排期与错题本），发到另一台电脑后导入；也可当定期备份")
       .addButton((b) => b.setButtonText("导出").onClick(() => {
         const r = this.plugin.exportProgress();
         new Notice(r.ok ? `已导出 ${r.words} 个词 → ${r.name}` : `导出失败：${r.error}`);
