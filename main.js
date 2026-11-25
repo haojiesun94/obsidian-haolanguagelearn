@@ -2259,7 +2259,7 @@ class HaoLangSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "hll-set-desc",
       text: okLic
-        ? `已激活：${lic.code}（${new Date(lic.at || Date.now()).toLocaleDateString("zh-CN")}）· 永久更新`
+        ? `已激活：${String(lic.code).slice(0, 12)}…（${lic.at && lic.at > 1e12 ? new Date(lic.at).toLocaleDateString("zh-CN") : "已激活"}）· 永久更新`
         : `未激活。本插件 ${PRICE_TEXT} 买断、永久更新；加微信 ${WECHAT} 购买后填入兑换码。`,
     });
     const tr = this.plugin.trialState();
@@ -2285,30 +2285,7 @@ class HaoLangSettingTab extends PluginSettingTab {
           this.display();
         }));
     }
-    containerEl.createEl("h3", { text: "学习内容" });
-    containerEl.createEl("p", { cls: "hll-set-desc",
-      text: "内容全部随插件自带：5000 词、41 条语法、双语例句、50 个场景、200 条短语。装完即用，不需要自己准备任何文件。" });
-    const dataLine = containerEl.createEl("p", { cls: "hll-set-desc", text: "正在检查自带数据…" });
-    Promise.resolve(this.plugin.dataSummary()).then((d) => {
-      dataLine.setText(`当前可用：单词 ${d.words} · 语法 ${d.grammar} 条 · 例句 ${d.examples} 词 · 场景 ${d.scenes} 个（${d.sceneSentences} 句）· 短语 ${d.phrases} 条　来源：${d.from}`);
-    }).catch(() => dataLine.setText("自带数据检查失败：打开插件面板即可确认是否可用"));
-
-    const pathRow = (name, key, desc, cache) => new Setting(containerEl).setName(name)
-      .setDesc(desc + "（留空 = 用插件自带）")
-      .addText((t) => t.setValue(this.plugin.data.settings[key] || "").onChange(async (v) => {
-        this.plugin.data.settings[key] = v.trim();
-        if (cache) this.plugin[cache] = null;
-        await this.plugin.saveData(this.plugin.data);
-        this.display();
-      }));
-    pathRow("单词库", "wordFile", "换成自己的词库才填：{ meta, groups: [{id, level, words:[{w,ph,zh}]}] }", "_wordCache");
-    pathRow("语法库", "grammarFile", "换成自己的语法表才填：{ meta, items: [...] }", "_gramCache");
-    pathRow("例句库", "exampleFile", "换成自己的例句才填：{ \"word\": [[英文例句, 中文翻译], ...] }", "_exCache");
-    pathRow("场景库", "sceneFile", "换成自己的场景才填：{ meta, scenarios: [{name, sentences:[{en,zh}]}] }", "_sceneCache");
-    pathRow("短语库", "phraseFile", "换成自己的短语才填：{ meta, phrases: [{pattern, zh, ex:[{en,zh}]}] }", "_phraseCache");
-    containerEl.createEl("p", { cls: "hll-set-desc",
-      text: "例句语料来自 Tatoeba（tatoeba.org，CC-BY 2.0 FR），已统一转简体。" });
-
+    containerEl.createEl("h3", { text: "显示与发音" });
     new Setting(containerEl).setName("卡片上显示例句").setDesc("每张卡默认显示 1 句，可点「更多例句」展开")
       .addToggle((t) => t.setValue(this.plugin.data.settings.showExample !== false)
         .onChange(async (v) => { this.plugin.data.settings.showExample = v; await this.plugin.saveData(this.plugin.data); }));
@@ -2335,6 +2312,7 @@ class HaoLangSettingTab extends PluginSettingTab {
       .addSlider((s) => s.setLimits(0.5, 1.4, 0.1).setValue(this.plugin.data.settings.rate)
         .setDynamicTooltip()
         .onChange(async (v) => { this.plugin.data.settings.rate = v; await this.plugin.saveData(this.plugin.data); }));
+    containerEl.createEl("p", { cls: "hll-set-desc", text: "例句语料来自 Tatoeba（tatoeba.org，CC-BY 2.0 FR），已转简体。" });
 
     containerEl.createEl("h3", { text: "学习进度" });
     const prog = this.plugin.data.progress || {};
@@ -2343,11 +2321,6 @@ class HaoLangSettingTab extends PluginSettingTab {
     const nWrong = Object.keys(prog.wrong || {}).length;
     containerEl.createEl("p", { cls: "hll-set-desc",
       text: `当前：已掌握 ${nWords} 词 · 过关 ${nGroups} 组 · 错题 ${nWrong} 个。进度存在库内文件里，库在同步（Obsidian Sync / 网盘 / git）就会跟着走。` });
-    new Setting(containerEl).setName("进度文件路径").setDesc("换电脑时两边指向同一路径即可；留空则只用 data.json")
-      .addText((t) => t.setValue(this.plugin.data.settings.progressFile || "").onChange(async (v) => {
-        this.plugin.data.settings.progressFile = v.trim();
-        await this.plugin.saveData(this.plugin.data);
-      }));
     containerEl.createEl("p", { cls: "hll-set-desc",
       text: "备份 / 迁移入口只有这里：导出文件含 已掌握词 + 过关记录 + 抽查成绩 + 错题本 + 复习排期，另一台电脑导入即可接着学。" });
     new Setting(containerEl).setName("导出学习进度")
