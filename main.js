@@ -196,6 +196,7 @@ const DEFAULT_SETTINGS = {
   showMeaning: true,     // 卡片上是否显示中文释义（可随时「收起」）
   showExample: true,     // 卡片上是否显示例句
   rate: 0.9,             // 语速
+  voice: "female",       // 发音音色：female / male
   trialDays: 7,          // 未激活试用天数
 };
 
@@ -290,21 +291,59 @@ function renderSenses(parent, zh) {
   });
 }
 
-function speak(word, rate = 0.9) {
+// 系统语音里优先挑「好听」的：自然音/神经音优先，再按常见好听的音色名排队
+const VOICE_PREFS = {
+  female: ["Samantha", "Aria", "Jenny", "Google US English", "Zira", "Karen", "Serena",
+           "Victoria", "Tessa", "Moira", "Fiona", "Ava", "Sonia", "Libby", "Michelle", "Emma"],
+  male: ["Guy", "Daniel", "Alex", "Ryan", "Aaron", "Tom", "David", "Fred", "Oliver", "Rishi",
+         "Brian", "Matthew", "Arthur"],
+};
+const FEMALE_RE = /(female|woman|aria|jenny|zira|samantha|karen|serena|victoria|tessa|moira|fiona|ava|sonia|libby|michelle|emma|susan|allison|joanna|salli|kendra|ivy|amy|natasha)/i;
+const MALE_RE = /(male|man\b|guy|david|alex|daniel|fred|aaron|tom|oliver|rishi|brian|matthew|arthur|ryan|stephen|justin|joey)/i;
+const NICE_RE = /(natural|neural|premium|enhanced|online)/i;
+
+function pickVoice(gender) {
+  const g = gender === "male" ? "male" : "female";
+  let voices = [];
+  try { voices = (window.speechSynthesis && window.speechSynthesis.getVoices()) || []; } catch (e) { voices = []; }
+  const en = voices.filter((v) => String(v.lang || "").toLowerCase().startsWith("en"));
+  if (!en.length) return null;
+  const prefs = VOICE_PREFS[g];
+  const re = g === "male" ? MALE_RE : FEMALE_RE;
+  const otherRe = g === "male" ? FEMALE_RE : MALE_RE;
+  const score = (v) => {
+    let sc = 0;
+    const name = String(v.name || "");
+    const idx = prefs.findIndex((n) => name.toLowerCase().includes(n.toLowerCase()));
+    if (idx >= 0) sc += 1000 - idx * 10;        // 偏好名单越靠前越高分（决定性别内选谁）
+    if (NICE_RE.test(name)) sc += 60;           // 自然音/神经音，明显好听
+    if (re.test(name)) sc += 30;                // 名字像对应性别
+    if (otherRe.test(name)) sc -= 40;           // 排除相反性别
+    if (/^en[-_]us/i.test(v.lang)) sc += 10;    // 美音优先（教学常用）
+    if (v.localService) sc += 5;                // 本地音不卡
+    return sc;
+  };
+  en.sort((a, b) => score(b) - score(a));
+  return en[0] || null;
+}
+
+function speak(text, rate = 0.9, gender = "female") {
   try {
     const synth = window.speechSynthesis;
     if (synth) {
       synth.cancel();
-      const u = new window.SpeechSynthesisUtterance(word);
-      u.lang = "en-US";
+      const u = new window.SpeechSynthesisUtterance(text);
+      const v = pickVoice(gender);
+      if (v) { u.voice = v; u.lang = v.lang || "en-US"; } else { u.lang = "en-US"; }
       u.rate = rate;
-      u.pitch = 1;
+      u.pitch = gender === "male" ? 0.92 : 1.05;
       synth.speak(u);
       return "tts";
     }
   } catch (e) { /* 落到下面的在线音频 */ }
   try {
-    const a = new Audio(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=2`);
+    // 有道备用音源：type=2 女声 / type=1 男声
+    const a = new Audio(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(text)}&type=${gender === "male" ? 1 : 2}`);
     a.play();
     return "audio";
   } catch (e) {
@@ -744,7 +783,7 @@ class HaoLanguageLearnView extends ItemView {
         const sp = line.createEl("button", { cls: "hll-ex-sound" });
         setIcon(sp, "volume-1");
         sp.title = "读这句";
-        sp.onclick = (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); speak(en, 0.95); };
+        sp.onclick = (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.plugin.say(en, 0.95); };
         row.createDiv({ cls: "hll-ex-zh", text: zh });
       });
       if (exs.length > 1) {
@@ -817,9 +856,9 @@ class HaoLanguageLearnView extends ItemView {
       else this.plugin.addWrong(word.w, word.gid || gid);
       this.render();
     };
-    sound.onclick = () => speak(word.w, this.plugin.data.settings.rate);
+    sound.onclick = () => this.plugin.say(word.w);
 
-    if (this.plugin.data.settings.autoSpeak) speak(word.w, this.plugin.data.settings.rate);
+    if (this.plugin.data.settings.autoSpeak) this.plugin.say(word.w);
   }
 
   // items: [{w, ph, zh, gid}]；singleGid 非空时全对才把这一组记为过关
@@ -866,7 +905,7 @@ class HaoLanguageLearnView extends ItemView {
     top.createSpan({ cls: "hll-card-idx", text: `抽查 ${this.quizIdx + 1} / ${this.quizList.length}` });
     if (this.quizLabel) top.createSpan({ cls: "hll-quiz-tag", text: this.quizLabel });
     const sound = top.createEl("button", { cls: "hll-sound", text: "🔊" });
-    sound.onclick = () => speak(word.w, this.plugin.data.settings.rate);
+    sound.onclick = () => this.plugin.say(word.w);
 
     card.createDiv({ cls: "hll-word", text: word.w });
     if (this.plugin.data.settings.showPhonetic && word.ph) card.createDiv({ cls: "hll-ph", text: word.ph });
@@ -1323,6 +1362,11 @@ module.exports = class HaoLanguageLearn extends Plugin {
   }
 
   // ---- 艾宾浩斯复习（SRS）----
+  say(text, rate) {
+    const st = this.data.settings || {};
+    return speak(text, rate == null ? st.rate : rate, st.voice === "male" ? "male" : "female");
+  }
+
   _srs() {
     const p = this.data.progress;
     if (!p.srs || typeof p.srs !== "object") p.srs = {};
@@ -1738,6 +1782,18 @@ class HaoLangSettingTab extends PluginSettingTab {
         .onChange(async (v) => { this.plugin.data.settings.showMeaning = v; await this.plugin.saveData(this.plugin.data); }));
     new Setting(containerEl).setName("卡片出现时自动发音").addToggle((t) => t.setValue(!!this.plugin.data.settings.autoSpeak)
       .onChange(async (v) => { this.plugin.data.settings.autoSpeak = v; await this.plugin.saveData(this.plugin.data); }));
+    new Setting(containerEl).setName("发音音色").setDesc("默认女声；系统里装了几个英文语音就按名单挑更好听的那个（自然音优先）")
+      .addDropdown((d) => d.addOption("female", "女声").addOption("male", "男声")
+        .setValue(this.plugin.data.settings.voice === "male" ? "male" : "female")
+        .onChange(async (v) => {
+          this.plugin.data.settings.voice = v;
+          await this.plugin.saveData(this.plugin.data);
+          this.plugin.say("This is how I sound.", 0.9);   // 换完立刻播一句，省得再点试听
+        }))
+      .addExtraButton((b) => b.setIcon("volume-2").setTooltip("试听").onClick(() => this.plugin.say("Reading makes me better at English.", 0.9)));
+    const vNow = pickVoice(this.plugin.data.settings.voice === "male" ? "male" : "female");
+    containerEl.createEl("p", { cls: "hll-set-desc",
+      text: vNow ? `当前使用：${vNow.name}（${vNow.lang}）` : "当前使用：系统默认语音（没检测到英文语音，装了新的会自动选上）" });
     new Setting(containerEl).setName("语速").setDesc("0.5 慢 — 1.0 正常")
       .addSlider((s) => s.setLimits(0.5, 1.4, 0.1).setValue(this.plugin.data.settings.rate)
         .setDynamicTooltip()
