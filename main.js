@@ -1227,10 +1227,6 @@ class HaoLanguageLearnView extends ItemView {
       this.currentGroupId = 0;
       this.render();
     };
-    const bak = acts.createEl("button", { cls: "hll-btn", text: "进度备份 / 迁移" });
-    bak.onclick = () => {
-      new Notice("在 设置 → HaoLanguageLearn → 学习进度 里导出或导入（含复习排期）");
-    };
   }
 
   /* ================= 语法 ================= */
