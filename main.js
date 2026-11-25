@@ -300,6 +300,58 @@ function highlightWord(parent, text, w) {
 }
 
 // 释义按「名 / 动 / 形 …」分段，词性做成小标签，避免看着像错字
+function posOf(zh) {
+  const m = String(zh || "").match(/^([名动形副介连代数量叹助拟复前冠缩])/);
+  return m ? m[1] : "";
+}
+
+function senseKey(zh) {
+  return String(zh || "").replace(/^[名动形副介连代数量叹助拟复前冠缩]\s*/, "").replace(/[；;、，,。.\s]/g, "");
+}
+
+function shuffleArr(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// 选项里的短释义：只取第一段词性 + 前 3 个义项，长度拉平，避免「最长的就是答案」
+function shortZh(zh, maxItems = 3) {
+  const POS = "名动形副介连代数量叹助拟复前冠缩";
+  const segs = String(zh || "").split(/[\uFF1B;]/).map((x) => x.trim()).filter(Boolean);
+  if (!segs.length) return "";
+  const m = segs[0].match(new RegExp(`^([${POS}])\\s*([\\s\\S]*)$`));
+  const body = m ? m[2] : segs[0];
+  const items = body.split(/[\u3001,\uFF0C]/).map((x) => x.trim()).filter(Boolean);
+  const more = segs.length > 1 || items.length > maxItems;
+  return items.slice(0, maxItems).join("\u3001") + (more ? "\u2026" : "");
+}
+
+// 四选一：正确答案 + 3 个干扰项（优先同词性，其次任意，去重）
+function buildMcOptions(word, pool, want = 4) {
+  const seen = new Set([senseKey(word.zh)]);
+  const cand = [];
+  (pool || []).forEach((it) => {
+    if (!it || !it.zh || it.w === word.w || it.zh === word.zh) return;
+    const k = senseKey(it.zh);
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    cand.push({ zh: it.zh, pos: posOf(it.zh) });
+  });
+  const myPos = posOf(word.zh);
+  const same = shuffleArr(cand.filter((c) => c.pos === myPos));
+  const rest = shuffleArr(cand.filter((c) => c.pos !== myPos));
+  const picked = [];
+  const need = want - 1;
+  same.slice(0, Math.min(2, need)).forEach((c) => picked.push(c.zh));
+  rest.forEach((c) => { if (picked.length < need) picked.push(c.zh); });
+  same.slice(2).forEach((c) => { if (picked.length < need) picked.push(c.zh); });
+  return shuffleArr([{ zh: word.zh, ok: true }].concat(picked.map((zh) => ({ zh, ok: false }))));
+}
+
 function renderSenses(parent, zh) {
   const POS = "名动形副介连代数量叹助拟复前冠缩";
   const parts = String(zh || "").split(/[；;]/).map((x) => x.trim()).filter(Boolean);
@@ -816,11 +868,15 @@ class HaoLanguageLearnView extends ItemView {
       card.createDiv({ cls: "hll-ph", text: word.ph });
     }
 
-    // 释义：常显 or 悬浮显示（不用点）
-    const always = this.plugin.data.settings.showMeaning || this.revealedCard;
-    const ans = card.createDiv({ cls: "hll-answer" + (always ? "" : " is-ghost") });
+    // 释义：学习模式常显/悬浮；复习模式锁住，选完再解锁
+    const quizMode = !isStudy;
+    const answered = quizMode && this._mcAnswered === word.w;
+    const always = quizMode ? answered : (this.plugin.data.settings.showMeaning || this.revealedCard);
+    const ans = card.createDiv({ cls: "hll-answer" + (always ? "" : (quizMode ? " is-locked" : " is-ghost")) });
     renderSenses(ans, word.zh);
-    const hintText = always ? "读一遍，再决定要不要标记" : "鼠标移到卡片上就能看释义（不用点）";
+    const hintText = quizMode
+      ? (answered ? "答案已给出，看下面各档的排期" : "四选一：选对往后推，选错退回隔天")
+      : (always ? "读一遍，再决定要不要标记" : "鼠标移到卡片上就能看释义（不用点）");
     card.createDiv({ cls: "hll-hint", text: hintText });
 
     // 例句（英文 + 中文翻译，默认显示 1 句，可展开）
@@ -851,7 +907,7 @@ class HaoLanguageLearnView extends ItemView {
       }
     }
 
-    if (!always) {
+    if (!always && !quizMode) {
       card.addEventListener("mouseenter", () => ans.classList.remove("is-ghost"));
       card.addEventListener("mouseleave", () => { if (!this.revealedCard) ans.classList.add("is-ghost"); });
       card.addEventListener("click", (ev) => {
@@ -881,19 +937,23 @@ class HaoLanguageLearnView extends ItemView {
     } else {
       const srsNow = (this.plugin.data.progress.srs || {})[word.w] || { stage: 0 };
       const nextStage = Math.min((Number(srsNow.stage) || 0) + 1, SRS_STEPS.length - 1);
-      const forget = actions.createEl("button", { cls: "hll-btn", text: "忘了 · 明天再来" });
-      const remember = actions.createEl("button", { cls: "hll-btn is-primary", text: `记得 · ${SRS_STEPS[nextStage]} 天后` });
-      const skip = actions.createEl("button", { cls: "hll-mini-link", text: "不再复习" });
       const advance = async (ok) => {
+        this._mcAnswered = word.w;
         this.plugin.reviewAnswer(word.w, ok);
         await this.plugin.saveData(this.plugin.data);
-        this.revealedCard = false;
-        this.queue.splice(this.idx, 1);
-        if (this.idx >= this.queue.length) this.idx = 0;
-        this.render();
+        this.render();                       // 先亮出正误 + 解锁释义
+        window.setTimeout(() => {
+          this._mcAnswered = null;
+          this.revealedCard = false;
+          const cur = this.queue[this.idx];
+          if (cur && cur.w === word.w) this.queue.splice(this.idx, 1);
+          if (this.idx >= this.queue.length) this.idx = 0;
+          this.render();
+        }, ok ? 780 : 1600);
       };
-      forget.onclick = () => advance(false);
-      remember.onclick = () => advance(true);
+      const optsBox = card.createDiv({ cls: "hll-opts hll-opts-review" });
+      this.mountMcq(optsBox, word, this.queue, (ok) => advance(ok));
+      const skip = actions.createEl("button", { cls: "hll-mini-link", text: "不再复习" });
       skip.onclick = () => {
         this.plugin.unmarkMastered(word.gid, word.w);
         this.plugin.removeWrong(word.w);
@@ -915,6 +975,62 @@ class HaoLanguageLearnView extends ItemView {
     sound.onclick = () => this.plugin.say(word.w);
 
     if (this.plugin.data.settings.autoSpeak) this.plugin.say(word.w);
+  }
+
+  // 选项缓存（同一题重绘不换顺序）
+  _mcSlot(key) {
+    if (!this._mc || this._mc.key !== key) this._mc = { key, list: null, picked: null };
+    return this._mc;
+  }
+
+  async mcOptions(word, pool) {
+    const key = `${this.mode}|${this.idx}|${this.quizIdx}|${word.w}`;
+    const slot = this._mcSlot(key);
+    if (slot.list) return slot.list;
+    let list = buildMcOptions(word, pool || []);
+    if (list.length < 4) {
+      try {
+        const db = await this.plugin.loadWords();
+        const all = [];
+        ((db && db.groups) || []).forEach((g) => (g.words || []).forEach((x) => all.push({ w: x.w, zh: x.zh })));
+        list = buildMcOptions(word, all);
+      } catch (e) { /* 词库读不到就用现有的 */ }
+    }
+    this._mcSlot(key).list = list;
+    return list;
+  }
+
+  // parent 里画四选一；onAnswer(ok, index)
+  mountMcq(parent, word, pool, onAnswer) {
+    const key = `${this.mode}|${this.idx}|${this.quizIdx}|${word.w}`;
+    const slot = this._mcSlot(key);
+    const box = parent.createDiv({ cls: "hll-opts" });
+    box.createDiv({ cls: "hll-muted", text: "生成选项中…" });
+    const paint = (list) => {
+      box.empty();
+      list.forEach((o, i) => {
+        const picked = slot.picked;
+        const state = picked == null ? "" : (o.ok ? " is-right" : (picked === i ? " is-wrong" : " is-dim"));
+        const b = box.createEl("button", { cls: "hll-opt" + state });
+        b.setAttribute("data-ok", o.ok ? "1" : "0");
+        b.createSpan({ cls: "hll-opt-pos", text: posOf(o.zh) || "\u00b7" });
+        b.createSpan({ cls: "hll-opt-text", text: shortZh(o.zh) });
+        if (picked != null) {
+          b.disabled = true;
+        } else {
+          b.onclick = () => {
+            if (slot.picked != null) return;
+            slot.picked = i;
+            paint(list);
+            onAnswer(o.ok, i);
+          };
+        }
+      });
+    };
+    this.mcOptions(word, pool).then((list) => {
+      if (this._mc && this._mc.key === key) paint(list);
+    }).catch(() => box.setText("选项生成失败"));
+    return box;
   }
 
   // items: [{w, ph, zh, gid}]；singleGid 非空时全对才把这一组记为过关
@@ -966,33 +1082,37 @@ class HaoLanguageLearnView extends ItemView {
     card.createDiv({ cls: "hll-word", text: word.w });
     if (this.plugin.data.settings.showPhonetic && word.ph) card.createDiv({ cls: "hll-ph", text: word.ph });
 
-    const answer = card.createDiv({ cls: "hll-answer" + (this.revealed ? "" : " is-hidden") });
-    if (this.revealed) renderSenses(answer, word.zh);
-    else answer.setText("点下面「看释义」再对照");
+    const answered = this._mcAnswered === word.w;
+    const answer = card.createDiv({ cls: "hll-answer" + (answered ? "" : " is-locked") });
+    renderSenses(answer, word.zh);
+    card.createDiv({ cls: "hll-hint", text: answered ? "看正误标记，正在进入下一题…" : "四选一：选出这个词的正确释义" });
+
+    const optsBox = card.createDiv({ cls: "hll-opts" });
+    this.mountMcq(optsBox, word, this.quizList, (ok) => this.quizAnswer(word, ok));
 
     const actions = card.createDiv({ cls: "hll-actions" });
-    if (!this.revealed) {
-      const show = actions.createEl("button", { cls: "hll-btn is-primary", text: "看释义" });
-      show.onclick = () => { this.revealed = true; this.render(); };
+    const skip = actions.createEl("button", { cls: "hll-mini-link", text: "不会，跳过" });
+    skip.onclick = () => { if (this._mcAnswered !== word.w) this.quizAnswer(word, false); };
+  }
+
+  // 抽查答题结果：对 → 出书/推进排期；错 → 进错题本、撤销掌握
+  quizAnswer(word, ok) {
+    if (this._mcAnswered === word.w) return;
+    this._mcAnswered = word.w;
+    if (ok) {
+      this.quizRight += 1;
+      if (word.fromWrong) this.plugin.removeWrong(word.w);
+      if (this.plugin.isMastered(word.w)) this.plugin.reviewAnswer(word.w, true);
     } else {
-      const no = actions.createEl("button", { cls: "hll-btn", text: "没记住" });
-      const yes = actions.createEl("button", { cls: "hll-btn is-primary", text: "答对了" });
-      const next = (right) => {
-        if (right) {
-          this.quizRight += 1;
-          if (word.fromWrong) this.plugin.removeWrong(word.w);       // 错题答对 → 出书
-          if (this.plugin.isMastered(word.w)) this.plugin.reviewAnswer(word.w, true);  // 抽查答对 → 下次隔更久
-        } else {
-          this.plugin.unmarkMastered(word.gid, word.w);
-          if (word.gid) this.plugin.addWrong(word.w, word.gid);      // 答错 → 进书
-        }
-        this.quizIdx += 1;
-        this.revealed = false;
-        this.render();
-      };
-      no.onclick = () => next(false);
-      yes.onclick = () => next(true);
+      this.plugin.unmarkMastered(word.gid, word.w);
+      if (word.gid) this.plugin.addWrong(word.w, word.gid);
     }
+    this.render();
+    window.setTimeout(() => {
+      this._mcAnswered = null;
+      if (this.quizList[this.quizIdx] && this.quizList[this.quizIdx].w === word.w) this.quizIdx += 1;
+      this.render();
+    }, ok ? 760 : 1600);
   }
 
   goNextGroup() {

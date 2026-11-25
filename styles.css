@@ -512,3 +512,27 @@
 .hll-inner .hll-phrase-ex-en { font-size:14px; line-height:1.5; display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
 .hll-inner .hll-phrase-ex-zh { font-size:12px; color:var(--text-muted); margin-top:2px; }
 .hll-inner .hll-phrase-acts { display:flex; gap:6px; padding-top:2px; }
+
+/* ===== 四选一（复习 / 抽查） ===== */
+.hll-opts { display:flex; flex-direction:column; gap:8px; width:100%; max-width:620px; margin:6px 0 2px; }
+.hll-opt { display:flex; align-items:baseline; gap:8px; text-align:left;
+  width:100%; padding:9px 13px; border-radius:12px; cursor:pointer; box-shadow:none;
+  border:1px solid var(--background-modifier-border); background:var(--background-primary);
+  color:var(--text-normal); line-height:1.45; transition:border-color .12s, background .12s; }
+.hll-opt:hover:not(:disabled) { border-color:var(--interactive-accent, #4a8f68); }
+.hll-opt .hll-sense { display:flex; align-items:baseline; gap:6px; }
+.hll-opt .hll-pos { flex:0 0 auto; }
+.hll-opt .hll-sense-text { color:var(--text-normal); }
+.hll-opt.is-right { border-color:#3fa06a; background:color-mix(in srgb, #3fa06a 14%, transparent); }
+.hll-opt.is-right .hll-sense-text { color:#2f7a4f; font-weight:600; }
+.hll-opt.is-wrong { border-color:#c2504f; background:color-mix(in srgb, #c2504f 13%, transparent); }
+.hll-opt.is-wrong .hll-sense-text { color:#a83c3c; }
+.hll-opt.is-dim { opacity:.52; }
+.hll-opt:disabled { cursor:default; }
+/* 释义未作答前锁住（复习卡） */
+.hll-answer.is-locked { filter:blur(7px); opacity:.5; pointer-events:none; user-select:none; transition:filter .15s; }
+.hll-opts-review { margin-top:8px; }
+
+.hll-opt-pos { flex:0 0 auto; font-size:11px; font-weight:600; padding:1px 6px; border-radius:6px;
+  background:color-mix(in srgb, var(--text-accent, #4a8f68) 15%, transparent); color:var(--text-muted); }
+.hll-opt-text { flex:1; min-width:0; font-size:13px; line-height:1.5; }
