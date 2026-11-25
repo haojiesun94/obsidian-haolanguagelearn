@@ -1334,15 +1334,16 @@ module.exports = class HaoLanguageLearn extends Plugin {
     const srs = this._srs();
     const p = this.data.progress;
     const t = dateStr();
-    let n = 0;
+    const queue = [];
     Object.keys(p.mastered || {}).forEach((gid) => {
-      (p.mastered[gid] || []).forEach((w) => {
-        if (srs[w]) return;
-        srs[w] = { gid: Number(gid), stage: 0, last: null, next: t, reps: 0, lapses: 0 };
-        n += 1;
-      });
+      (p.mastered[gid] || []).forEach((w) => { if (!srs[w]) queue.push({ gid: Number(gid), w }); });
     });
-    return n;
+    // 存量词按每天 20 个铺开，避免升级当天一次涌出几百个到期词
+    queue.forEach((it, i) => {
+      srs[it.w] = { gid: it.gid, stage: 0, last: null,
+                    next: addDays(t, Math.floor(i / 20)), reps: 0, lapses: 0 };
+    });
+    return queue.length;
   }
 
   // 刚学会：第一次复习排在明天
