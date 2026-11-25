@@ -303,20 +303,41 @@ function highlightWord(parent, text, w) {
 function renderSenses(parent, zh) {
   const POS = "名动形副介连代数量叹助拟复前冠缩";
   const parts = String(zh || "").split(/[；;]/).map((x) => x.trim()).filter(Boolean);
+  const order = [];
+  const byPos = new Map();
+  const plain = [];
   parts.forEach((seg) => {
-    const row = parent.createDiv({ cls: "hll-sense" });
-    let m = seg.match(new RegExp(`^([${POS}])\\s*([\\s\\S]*)$`));
-    if (!m) {
-      const ab = seg.match(/^([a-zA-Z]{1,5})\.\s*([\s\S]*)$/);
-      if (ab && POS_ABBR[ab[1].toLowerCase()]) m = [seg, POS_ABBR[ab[1].toLowerCase()], ab[2]];
-    }
+    let pos = null;
+    let text = seg;
+    const m = seg.match(new RegExp(`^([${POS}])\\s*([\\s\\S]*)$`));
     if (m) {
-      row.createSpan({ cls: "hll-pos", text: m[1] });
-      row.createSpan({ cls: "hll-sense-text", text: m[2] });
+      pos = m[1];
+      text = m[2];
     } else {
-      row.createSpan({ cls: "hll-sense-text", text: seg });
+      const ab = seg.match(/^([a-zA-Z]{1,5})\.\s*([\s\S]*)$/);
+      if (ab && POS_ABBR[ab[1].toLowerCase()]) {
+        pos = POS_ABBR[ab[1].toLowerCase()];
+        text = ab[2];
+      }
     }
+    if (!pos) { plain.push(seg); return; }
+    if (!byPos.has(pos)) { byPos.set(pos, []); order.push(pos); }
+    String(text).split(/[、,，]/).map((x) => x.trim()).filter(Boolean).forEach((t) => {
+      const arr = byPos.get(pos);
+      if (!arr.includes(t)) arr.push(t);
+    });
   });
+  order.forEach((pos) => {
+    const items = byPos.get(pos);
+    if (!items.length) return;
+    const row = parent.createDiv({ cls: "hll-sense" });
+    row.createSpan({ cls: "hll-pos", text: pos });
+    row.createSpan({ cls: "hll-sense-text", text: items.join("、") });
+  });
+  if (plain.length) {
+    const row = parent.createDiv({ cls: "hll-sense" });
+    row.createSpan({ cls: "hll-sense-text", text: plain.join("；") });
+  }
 }
 
 // 系统语音里优先挑「好听」的：自然音/神经音优先，再按常见好听的音色名排队
@@ -946,7 +967,8 @@ class HaoLanguageLearnView extends ItemView {
     if (this.plugin.data.settings.showPhonetic && word.ph) card.createDiv({ cls: "hll-ph", text: word.ph });
 
     const answer = card.createDiv({ cls: "hll-answer" + (this.revealed ? "" : " is-hidden") });
-    answer.setText(this.revealed ? word.zh : "点下面「看释义」再对照");
+    if (this.revealed) renderSenses(answer, word.zh);
+    else answer.setText("点下面「看释义」再对照");
 
     const actions = card.createDiv({ cls: "hll-actions" });
     if (!this.revealed) {
