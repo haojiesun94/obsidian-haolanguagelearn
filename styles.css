@@ -466,3 +466,27 @@
 .hll-inner .hll-film-video video { width:100%; max-height:260px; border-radius:10px; background:#000; }
 .hll-inner .hll-film-video .hll-btn, .hll-inner .hll-movie .hll-btn { align-self:flex-start; }
 .hll-inner .hll-film-nav { margin-top:14px; }
+
+/* 场景英语 */
+.hll-inner .hll-scenes { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; margin-top:12px; }
+.hll-inner .hll-scene { display:flex; flex-direction:column; gap:7px; padding:14px; border:1px solid var(--background-modifier-border); border-radius:12px; background:var(--background-primary); }
+.hll-inner .hll-scene-name { font-size:15px; font-weight:600; }
+.hll-inner .hll-scene-meta { display:flex; gap:6px; flex-wrap:wrap; }
+.hll-inner .hll-scene-tag { font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid var(--background-modifier-border); color:var(--text-faint); }
+.hll-inner .hll-scene-bar { height:5px; border-radius:999px; background:var(--background-modifier-border); overflow:hidden; }
+.hll-inner .hll-scene-bar-fill { height:100%; background:var(--interactive-accent,#4a8f68); }
+.hll-inner .hll-scene-num { font-size:12px; color:var(--text-faint); }
+.hll-inner .hll-scene .hll-btn { align-self:flex-start; }
+.hll-inner .hll-scene-list { display:flex; flex-direction:column; gap:2px; margin-top:12px; }
+.hll-inner .hll-scene-row { display:grid; grid-template-columns:34px 1fr auto; gap:10px; align-items:start; padding:8px 10px; border-radius:8px; }
+.hll-inner .hll-scene-row:hover { background:color-mix(in srgb, var(--interactive-accent,#4a8f68) 6%, transparent); }
+.hll-inner .hll-scene-row.is-known { background:color-mix(in srgb, #4a8f68 10%, transparent); }
+.hll-inner .hll-scene-row.is-hard { box-shadow:inset 3px 0 0 #d9a441; }
+.hll-inner .hll-scene-no { font-size:12px; color:var(--text-faint); font-variant-numeric:tabular-nums; padding-top:2px; }
+.hll-inner .hll-scene-en { font-size:15px; line-height:1.5; }
+.hll-inner .hll-scene-zh { font-size:12px; color:var(--text-muted); margin-top:2px; }
+.hll-inner .hll-scene-acts { display:flex; gap:4px; opacity:.6; }
+.hll-inner .hll-scene-row:hover .hll-scene-acts { opacity:1; }
+.hll-inner .hll-mini-btn { font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--background-modifier-border); background:transparent; color:var(--text-muted); cursor:pointer; }
+.hll-inner .hll-mini-btn.is-on { background:var(--interactive-accent,#4a8f68); color:#fff; border-color:var(--interactive-accent,#4a8f68); }
+.hll-inner .hll-scene-card { min-height:0; width:100%; max-width:none; align-items:flex-start; text-align:left; padding:16px 18px; }
