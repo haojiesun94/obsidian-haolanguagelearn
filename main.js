@@ -199,6 +199,10 @@ const DEFAULT_SETTINGS = {
   trialDays: 7,          // 未激活试用天数
 };
 
+const EMPTY_PROGRESS = {
+  cursor: 1, mastered: {}, done: {}, quiz: {}, wrong: {}, lastGroup: 0,
+};
+
 const DEFAULT_DATA = {
   license: null,             // { code, at } 激活的兑换码
   trial: null,               // { start } 试用开始时间
@@ -1088,6 +1092,19 @@ module.exports = class HaoLanguageLearn extends Plugin {
         new Notice("没法自动重载：命令面板执行「Reload app without saving」（Ctrl+R）即可");
       },
     });
+    this.addCommand({
+      id: "export-language-progress",
+      name: "导出学习进度（.hllp）",
+      callback: () => {
+        const r = this.exportProgress();
+        new Notice(r.ok ? `已导出 ${r.words} 个词 → ${r.name}` : `导出失败：${r.error}`);
+      },
+    });
+    this.addCommand({
+      id: "import-language-progress",
+      name: "导入学习进度（.hllp）",
+      callback: () => this.pickProgressFile(),
+    });
     this.addSettingTab(new HaoLangSettingTab(this.app, this));
   }
 
@@ -1101,6 +1118,115 @@ module.exports = class HaoLanguageLearn extends Plugin {
       await leaf.setViewState({ type: VIEW_TYPE, active: true });
     }
     workspace.revealLeaf(leaf);
+  }
+
+  // ---- 学习进度导出 / 导入（离线搬进度：换电脑、备份）----
+  _countMastered(prog) {
+    const m = (prog && prog.mastered) || {};
+    return Object.keys(m).reduce((n, g) => n + (Array.isArray(m[g]) ? m[g].length : 0), 0);
+  }
+
+  exportProgress() {
+    const prog = this.data.progress || EMPTY_PROGRESS;
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+    const payload = {
+      "产品": "HaoLanguageLearn",
+      "格式": "hllp/1",
+      "导出时间": `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      "摘要": { "已掌握词": this._countMastered(prog), "过关组": Object.keys(prog.done || {}).length },
+      "进度": prog,
+    };
+    const name = `HaoLanguageLearn-学习进度-${stamp}.hllp`;
+    const text = JSON.stringify(payload, null, 2);
+    try {
+      const blob = new Blob([text], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      return { ok: true, name, words: this._countMastered(prog) };
+    } catch (e) {
+      return { ok: false, error: String(e && e.message || e) };
+    }
+  }
+
+  // 只增不减：按组合并已掌握词、按词合并错题本，过关记录取缺失的
+  mergeProgress(src) {
+    const p = this.data.progress || (this.data.progress = Object.assign({}, EMPTY_PROGRESS));
+    ["mastered", "done", "quiz", "wrong"].forEach((k) => { if (!p[k] || typeof p[k] !== "object") p[k] = {}; });
+    const stat = { words: 0, groups: 0, wrongs: 0, done: 0 };
+    const sm = (src && src.mastered) || {};
+    Object.keys(sm).forEach((gid) => {
+      const arr = Array.isArray(sm[gid]) ? sm[gid] : [];
+      if (!arr.length) return;
+      const cur = Array.isArray(p.mastered[gid]) ? p.mastered[gid] : (p.mastered[gid] = []);
+      const set = new Set(cur);
+      let added = 0;
+      arr.forEach((w) => { if (w && !set.has(w)) { cur.push(w); set.add(w); added++; } });
+      if (added) { stat.words += added; stat.groups += 1; }
+    });
+    const sd = (src && src.done) || {};
+    Object.keys(sd).forEach((gid) => { if (!p.done[gid]) { p.done[gid] = sd[gid]; stat.done += 1; } });
+    const sq = (src && src.quiz) || {};
+    Object.keys(sq).forEach((gid) => {
+      const a = p.quiz[gid], b = sq[gid];
+      if (!b) return;
+      if (!a) { p.quiz[gid] = b; return; }
+      const ra = a.total ? a.right / a.total : 0;
+      const rb = b.total ? b.right / b.total : 0;
+      if (rb > ra) p.quiz[gid] = b;
+    });
+    const sw = (src && src.wrong) || {};
+    Object.keys(sw).forEach((w) => { if (!p.wrong[w]) { p.wrong[w] = sw[w]; stat.wrongs += 1; } });
+    return stat;
+  }
+
+  parseProgressFile(text) {
+    const obj = JSON.parse(text);
+    if (!obj || typeof obj !== "object") throw new Error("空文件");
+    const prog = obj["进度"] || obj.progress || obj;
+    if (!prog || typeof prog !== "object") throw new Error("没有进度字段");
+    if (!prog.mastered && !prog.done && !prog.wrong && !prog.quiz) throw new Error("不是本插件的进度文件");
+    return prog;
+  }
+
+  pickProgressFile() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".hllp,.json,application/json";
+    input.style.display = "none";
+    document.body.appendChild(input);
+    input.onchange = async () => {
+      const f = input.files && input.files[0];
+      input.remove();
+      if (!f) return;
+      try {
+        const prog = this.parseProgressFile(await f.text());
+        const stat = this.mergeProgress(prog);
+        await this.saveData(this.data);
+        this._refreshViews();
+        const bits = [];
+        if (stat.words) bits.push(`新增 ${stat.words} 个已掌握词（${stat.groups} 组）`);
+        if (stat.done) bits.push(`补 ${stat.done} 组过关`);
+        if (stat.wrongs) bits.push(`错题 +${stat.wrongs}`);
+        new Notice(bits.length ? `导入完成：${bits.join("，")}` : "导入完成：没有比本机更新的进度");
+      } catch (e) {
+        new Notice("导入失败：这不是本插件导出的进度文件");
+      }
+    };
+    input.click();
+  }
+
+  _refreshViews() {
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((leaf) => {
+      if (leaf.view && typeof leaf.view.render === "function") leaf.view.render();
+    });
   }
 
   // 内嵌词库（社区目录安装只拿得到 manifest/main/styles 三个文件，没有 data/ 目录）
@@ -1427,6 +1553,28 @@ class HaoLangSettingTab extends PluginSettingTab {
       .addSlider((s) => s.setLimits(0.5, 1.4, 0.1).setValue(this.plugin.data.settings.rate)
         .setDynamicTooltip()
         .onChange(async (v) => { this.plugin.data.settings.rate = v; await this.plugin.saveData(this.plugin.data); }));
+
+    containerEl.createEl("h3", { text: "学习进度" });
+    const prog = this.plugin.data.progress || {};
+    const nWords = this.plugin._countMastered(prog);
+    const nGroups = Object.keys(prog.done || {}).length;
+    const nWrong = Object.keys(prog.wrong || {}).length;
+    containerEl.createEl("p", { cls: "hll-set-desc",
+      text: `当前：已掌握 ${nWords} 词 · 过关 ${nGroups} 组 · 错题 ${nWrong} 个。进度存在库内文件里，库在同步（Obsidian Sync / 网盘 / git）就会跟着走。` });
+    new Setting(containerEl).setName("进度文件路径").setDesc("换电脑时两边指向同一路径即可；留空则只用 data.json")
+      .addText((t) => t.setValue(this.plugin.data.settings.progressFile || "").onChange(async (v) => {
+        this.plugin.data.settings.progressFile = v.trim();
+        await this.plugin.saveData(this.plugin.data);
+      }));
+    new Setting(containerEl).setName("导出学习进度")
+      .setDesc("生成一个 .hllp 文件（含已掌握词、过关记录、抽查成绩、错题本），发到另一台电脑后导入")
+      .addButton((b) => b.setButtonText("导出").onClick(() => {
+        const r = this.plugin.exportProgress();
+        new Notice(r.ok ? `已导出 ${r.words} 个词 → ${r.name}` : `导出失败：${r.error}`);
+      }));
+    new Setting(containerEl).setName("导入学习进度")
+      .setDesc("只增不减：合并进现有进度，不会覆盖或清空本机的词与错题")
+      .addButton((b) => b.setButtonText("选择文件").setCta().onClick(() => this.plugin.pickProgressFile()));
   }
 }
 
