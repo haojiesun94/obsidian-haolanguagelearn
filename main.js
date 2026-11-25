@@ -389,6 +389,7 @@ class HaoLanguageLearnView extends ItemView {
     const body = inner.createDiv({ cls: "hll-body" });
     if (this.tab === "words") await this.drawWords(body);
     else if (this.tab === "groups") await this.drawGroups(body);
+    else if (this.tab === "srs") await this.drawCurve(body);
     else await this.drawGrammar(body);
   }
 
@@ -528,7 +529,7 @@ class HaoLanguageLearnView extends ItemView {
     };
 
     const tabs = head.createDiv({ cls: "hll-tabs" });
-    [["words", "单词学习"], ["groups", "卡组总览"], ["grammar", "语法学习"]].forEach(([k, label]) => {
+    [["words", "单词学习"], ["groups", "卡组总览"], ["srs", "复习曲线"], ["grammar", "语法学习"]].forEach(([k, label]) => {
       const b = tabs.createEl("button", {
         cls: "hll-tab" + (this.tab === k ? " is-active" : ""),
         text: label,
@@ -1111,6 +1112,126 @@ class HaoLanguageLearnView extends ItemView {
       item.createSpan({ cls: "hll-dot " + cls });
       item.createSpan({ text: label });
     });
+  }
+
+  /* ================= 复习曲线（艾宾浩斯）================= */
+  async drawCurve(parent) {
+    const db = await this.plugin.loadWords();
+    const zhOf = new Map();
+    if (db && db.groups) db.groups.forEach((g) => g.words.forEach((w) => zhOf.set(w.w, w.zh)));
+
+    const prog = this.plugin.data.progress;
+    const srs = prog.srs || {};
+    const words = Object.keys(srs);
+    const today = dateStr();
+    const dc = this.plugin.dueCounts();
+
+    parent.createDiv({ cls: "hll-sec-title", text: "艾宾浩斯复习曲线" });
+    parent.createDiv({ cls: "hll-muted", text: "学会一个词 → 隔天 → 隔周 → 隔月 → 三月，记得就往后推，忘了退回隔天。" });
+
+    // 统计
+    const stats = parent.createDiv({ cls: "hll-stats" });
+    const inWeek = words.filter((w) => {
+      const n = (srs[w] || {}).next || today;
+      return n > today && n <= addDays(today, 7);
+    }).length;
+    const later = Math.max(0, words.length - dc.total - dc.tomorrow - inWeek);
+    [["已排期", words.length + " 词"], ["今天到期", dc.total + " 词"], ["明天", dc.tomorrow + " 词"],
+     ["7 天内", inWeek + " 词"], ["更远", later + " 词"]].forEach(([k, v]) => {
+      const box = stats.createDiv({ cls: "hll-stat" });
+      box.createSpan({ cls: "hll-stat-k", text: k });
+      box.createSpan({ cls: "hll-stat-v", text: v });
+    });
+
+    // 未来 14 天柱子
+    const days = [];
+    for (let i = 0; i < 14; i++) {
+      const d = addDays(today, i);
+      days.push({ date: d, count: 0, label: d.slice(5).replace("-", "/") });
+    }
+    const idxOf = new Map(days.map((d, i) => [d.date, i]));
+    words.forEach((w) => {
+      const n = (srs[w] || {}).next || today;
+      const i = idxOf.get(n <= today ? today : n);   // 逾期都算在今天
+      if (i != null) days[i].count += 1;
+    });
+    const max = Math.max(1, ...days.map((d) => d.count));
+
+    const wrap = parent.createDiv({ cls: "hll-curve" });
+    days.forEach((d, i) => {
+      const col = wrap.createDiv({ cls: "hll-curve-col" });
+      const barBox = col.createDiv({ cls: "hll-curve-bar-box" });
+      const bar = barBox.createDiv({ cls: "hll-curve-bar" + (i === 0 ? " is-today" : "") + (d.count ? "" : " is-empty") });
+      bar.style.height = `${Math.max(d.count ? 8 : 2, Math.round((d.count / max) * 64))}px`;
+      bar.title = `${d.date}：${d.count} 词`;
+      col.createDiv({ cls: "hll-curve-num", text: d.count ? String(d.count) : "" });
+      col.createDiv({ cls: "hll-curve-day" + (i === 0 ? " is-today" : ""), text: i === 0 ? "今天" : d.label });
+    });
+
+    // 档位分布
+    const byStage = [0, 0, 0, 0];
+    words.forEach((w) => { byStage[Math.min(Number((srs[w] || {}).stage) || 0, 3)] += 1; });
+    const stageBox = parent.createDiv({ cls: "hll-stages" });
+    [0, 1, 2, 3].forEach((i) => {
+      const cell = stageBox.createDiv({ cls: "hll-stage-cell" });
+      cell.createSpan({ cls: "hll-stage-name", text: SRS_LABELS[i] });
+      cell.createSpan({ cls: "hll-stage-gap", text: `${SRS_STEPS[i]} 天` });
+      cell.createSpan({ cls: "hll-stage-n", text: `${byStage[i]} 词` });
+    });
+
+    // 按日期列出要复习的词
+    const groupsByDate = new Map();
+    words.forEach((w) => {
+      const n = (srs[w] || {}).next || today;
+      const key = n <= today ? today : n;
+      if (!groupsByDate.has(key)) groupsByDate.set(key, []);
+      groupsByDate.get(key).push(w);
+    });
+    const dates = [...groupsByDate.keys()].sort();
+    parent.createDiv({ cls: "hll-sec-title", text: `复习安排（${dates.length} 天）` });
+    if (!dates.length) {
+      parent.createDiv({ cls: "hll-empty", text: "还没有排期：去「单词学习」标记一些「记住了」，这里就会自动排出来。" });
+      return;
+    }
+    const list = parent.createDiv({ cls: "hll-days" });
+    dates.slice(0, 30).forEach((d) => {
+      const ws = groupsByDate.get(d);
+      const row = list.createDiv({ cls: "hll-day-row" + (d <= today ? " is-due" : "") });
+      const head = row.createDiv({ cls: "hll-day-head" });
+      const tag = d < today ? `逾期` : (d === today ? "今天" : d === addDays(today, 1) ? "明天" : d.slice(5));
+      head.createSpan({ cls: "hll-day-date", text: `${tag} ${d.slice(5)}` });
+      head.createSpan({ cls: "hll-day-n", text: `${ws.length} 词` });
+      const chips = row.createDiv({ cls: "hll-day-words" });
+      ws.slice(0, 12).forEach((w) => {
+        const chip = chips.createSpan({ cls: "hll-pill" + (prog.wrong && prog.wrong[w] ? " is-wrong" : "") });
+        chip.createSpan({ cls: "hll-pill-w", text: w });
+        const zh = zhOf.get(w);
+        if (zh) chip.createSpan({ cls: "hll-pill-zh", text: String(zh).split(/[；;,，]/)[0].slice(0, 10) });
+        chip.title = zh || w;
+        chip.onclick = () => this.plugin.say(w);
+      });
+      if (ws.length > 12) chips.createSpan({ cls: "hll-pill-more", text: `+${ws.length - 12}` });
+    });
+    if (dates.length > 30) parent.createDiv({ cls: "hll-muted", text: `还有 ${dates.length - 30} 天没显示` });
+
+    // 底部动作
+    const acts = parent.createDiv({ cls: "hll-actions hll-curve-acts" });
+    const go = acts.createEl("button", { cls: "hll-btn is-primary", text: dc.total ? `开始今天的复习（${dc.total}）` : "今天没有到期的词" });
+    go.disabled = dc.total === 0;
+    go.onclick = () => {
+      this.tab = "words";
+      this.wordMode = "review";
+      this.mode = "cards";
+      this.queue = [];
+      this.idx = 0;
+      this.currentGroupId = 0;
+      this.render();
+    };
+    const exp = acts.createEl("button", { cls: "hll-btn", text: "导出进度" });
+    exp.onclick = () => {
+      const r = this.plugin.exportProgress();
+      new Notice(r.ok ? `已导出 ${r.words} 个词 → ${r.name}` : `导出失败：${r.error}`);
+    };
   }
 
   /* ================= 语法 ================= */

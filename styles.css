@@ -87,7 +87,7 @@
   border: 1px solid var(--background-modifier-border); background: transparent; color: var(--text-muted);
 }
 .hll-inner button.hll-btn:hover { border-color: var(--text-accent); color: var(--text-accent); }
-.hll-inner button.hll-btn.is-primary { background: var(--text-accent); color: #fff; border-color: var(--text-accent); }
+.hll-inner button.hll-btn.is-primary { background: var(--text-accent, var(--interactive-accent, #4a8f68)); color: #fff; border-color: var(--text-accent, var(--interactive-accent, #4a8f68)); }
 .hll-inner button.hll-btn.is-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .hll-progress { height: 6px; border-radius: 3px; background: var(--background-modifier-border); overflow: hidden; margin-bottom: 26px; }
@@ -249,8 +249,9 @@
   background: transparent; color: var(--text-muted);
 }
 .hll-inner button.hll-btn.is-primary {
-  border-color: var(--text-accent);
-  background: var(--text-accent); color: #fff;
+  border-color: var(--text-accent, var(--interactive-accent, #4a8f68));
+  background: var(--text-accent, var(--interactive-accent, #4a8f68));
+  color: #fff;
 }
 .hll-inner button.hll-btn:disabled { opacity: 0.45; }
 .hll-inner button.hll-tab {
@@ -414,3 +415,31 @@
 .hll-inner .hll-stat.is-click { cursor:pointer; border:1px dashed var(--background-modifier-border); }
 .hll-inner .hll-stat.is-click:hover { border-color:var(--interactive-accent,#4a8f68); }
 .hll-inner .hll-mini-link { border:none; background:transparent; box-shadow:none; color:var(--text-muted); font-size:12px; padding:2px 6px; }
+
+/* 复习曲线 tab */
+.hll-inner .hll-sec-title { font-size:13px; font-weight:600; color:var(--text-muted); margin:18px 0 6px; letter-spacing:.03em; }
+.hll-inner .hll-curve { display:flex; align-items:flex-end; gap:6px; padding:10px 4px 0; border-bottom:1px solid var(--background-modifier-border); }
+.hll-inner .hll-curve-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; min-width:0; }
+.hll-inner .hll-curve-bar-box { height:64px; display:flex; align-items:flex-end; width:100%; justify-content:center; }
+.hll-inner .hll-curve-bar { width:70%; max-width:22px; border-radius:4px 4px 0 0; background:color-mix(in srgb, var(--interactive-accent,#4a8f68) 45%, transparent); }
+.hll-inner .hll-curve-bar.is-today { background:var(--interactive-accent,#4a8f68); }
+.hll-inner .hll-curve-bar.is-empty { background:var(--background-modifier-border); }
+.hll-inner .hll-curve-num { font-size:11px; color:var(--text-muted); height:14px; }
+.hll-inner .hll-curve-day { font-size:10px; color:var(--text-faint); white-space:nowrap; }
+.hll-inner .hll-curve-day.is-today { color:var(--interactive-accent,#4a8f68); font-weight:600; }
+.hll-inner .hll-stages { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:14px; }
+.hll-inner .hll-stage-cell { display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 6px; border:1px solid var(--background-modifier-border); border-radius:10px; }
+.hll-inner .hll-stage-name { font-size:12px; font-weight:600; }
+.hll-inner .hll-stage-gap { font-size:11px; color:var(--text-faint); }
+.hll-inner .hll-stage-n { font-size:13px; color:var(--text-muted); }
+.hll-inner .hll-days { display:flex; flex-direction:column; gap:6px; }
+.hll-inner .hll-day-row { border:1px solid var(--background-modifier-border); border-radius:10px; padding:8px 10px; }
+.hll-inner .hll-day-row.is-due { border-color:var(--interactive-accent,#4a8f68); background:color-mix(in srgb, var(--interactive-accent,#4a8f68) 6%, transparent); }
+.hll-inner .hll-day-head { display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:6px; }
+.hll-inner .hll-day-words { display:flex; flex-wrap:wrap; gap:6px; }
+.hll-inner .hll-pill { display:inline-flex; align-items:baseline; gap:4px; padding:2px 8px; border-radius:999px; border:1px solid var(--background-modifier-border); font-size:12px; cursor:pointer; }
+.hll-inner .hll-pill:hover { border-color:var(--interactive-accent,#4a8f68); }
+.hll-inner .hll-pill.is-wrong { border-color:#d9a441; }
+.hll-inner .hll-pill-zh { font-size:11px; color:var(--text-faint); }
+.hll-inner .hll-pill-more { font-size:11px; color:var(--text-faint); align-self:center; }
+.hll-inner .hll-curve-acts { margin-top:16px; }
