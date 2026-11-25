@@ -719,7 +719,9 @@ class HaoLanguageLearnView extends ItemView {
     });
     wrongBtn.disabled = wrongCount === 0;
     if (!wrongCount) wrongBtn.title = "还没有错题，卡片上点 ☆ 可以加入";
-    const quizBtn = right.createEl("button", { cls: "hll-btn", text: "抽查这一组" });
+    const groupWrong = this.plugin.wrongWordsOf(gid).length;
+    const quizBtn = right.createEl("button", { cls: "hll-btn", text: groupWrong ? `错题抽查 ${groupWrong}` : "错题抽查" });
+    quizBtn.title = groupWrong ? "只抽这一组的错题；答对即移出错题本" : "这组没有错题，点一下直接算通过";
     const nextBtn = right.createEl("button", { cls: "hll-btn is-primary", text: "下一组 →" });
     nextBtn.disabled = mastered.size < group.words.length;
     if (nextBtn.disabled) nextBtn.title = "先把这一组全部标记为「记住了」";
@@ -769,8 +771,9 @@ class HaoLanguageLearnView extends ItemView {
       const doneBox = stage.createDiv({ cls: "hll-done" });
       doneBox.createDiv({ cls: "hll-done-emoji", text: "✓" });
       doneBox.createDiv({ cls: "hll-done-title", text: `卡组 #${gid} 完成` });
-      doneBox.createDiv({ cls: "hll-muted", text: "去抽查一遍，确认不是「眼熟」而是真的记住。" });
-      const b = doneBox.createEl("button", { cls: "hll-btn is-primary", text: "抽查这一组" });
+      const dn = this.plugin.wrongWordsOf(gid).length;
+      doneBox.createDiv({ cls: "hll-muted", text: dn ? `还有 ${dn} 个错题，抽一遍过了就结束。` : "错题已经清空，这组算过关 ✓" });
+      const b = doneBox.createEl("button", { cls: "hll-btn is-primary", text: dn ? `错题抽查 ${dn}` : "算通过 ✓" });
       b.onclick = () => { this.startQuiz(group, gid); };
     } else if (this.queue.length === 0) {
       // 剩下的都已掌握但未抽查 —— 直接给下一组
@@ -940,6 +943,7 @@ class HaoLanguageLearnView extends ItemView {
       const advance = async (ok) => {
         this._mcAnswered = word.w;
         this.plugin.reviewAnswer(word.w, ok);
+        if (!ok) this.plugin.addWrong(word.w, word.gid || gid);   // 复习答错 → 进错题本，等抽查重练
         await this.plugin.saveData(this.plugin.data);
         this.render();                       // 先亮出正误 + 解锁释义
         window.setTimeout(() => {
@@ -1046,8 +1050,36 @@ class HaoLanguageLearnView extends ItemView {
     this.render();
   }
 
-  startQuiz(group, gid) {
-    this.startQuizItems(group.words.map((w) => ({ ...w, gid })), `卡组 #${gid}`, gid);
+  // 抽查只抽错题：错题通过了就移出错题本，这组不再重复抽查
+  async startQuiz(group, gid) {
+    const wrongs = this.plugin.wrongWordsOf(gid);
+    if (!wrongs.length) { this.finishGroupClean(gid); return; }
+    const byWord = new Map();
+    ((group && group.words) || []).forEach((w) => byWord.set(w.w, w));
+    if (wrongs.some((it) => !byWord.has(it.w))) {
+      try {
+        const db = await this.plugin.loadWords();
+        ((db && db.groups) || []).forEach((g) => (g.words || []).forEach((w) => { if (!byWord.has(w.w)) byWord.set(w.w, w); }));
+      } catch (e) { /* 用组内数据兜底 */ }
+    }
+    const items = wrongs.map((it) => {
+      const w = byWord.get(it.w) || {};
+      return { w: it.w, ph: w.ph || "", zh: w.zh || "", gid, fromWrong: true };
+    }).filter((x) => x.zh);
+    if (!items.length) { new Notice("这组的错题在词库里找不到释义"); return; }
+    this.startQuizItems(items, `错题 · 卡组 #${gid}`, gid);
+  }
+
+  // 这组没有错题 → 直接算过关
+  finishGroupClean(gid) {
+    this.plugin.markGroupDone(gid);
+    new Notice(`卡组 #${gid} 没有错题，直接算通过 ✓`);
+    this.mode = "cards";
+    this.quizList = [];
+    this.quizIdx = 0;
+    this.queue = [];
+    this.currentGroupId = 0;
+    this.render();
   }
 
   drawQuiz(stage, group, gid) {
@@ -1060,7 +1092,9 @@ class HaoLanguageLearnView extends ItemView {
       box.createDiv({ cls: "hll-done-emoji", text: right === total ? "✓" : "…" });
       box.createDiv({ cls: "hll-done-title", text: `抽查结束：${right} / ${total}` });
       if (this.quizLabel) box.createDiv({ cls: "hll-muted", text: this.quizLabel });
-      box.createDiv({ cls: "hll-muted", text: right === total ? "这一组过关了，可以进下一组。" : "没过的词回到卡片里，再记一遍。" });
+      box.createDiv({ cls: "hll-muted", text: right === total
+        ? (this.quizGid ? "错题全部通过，这组完成 ✓" : "错题全部通过 ✓")
+        : `还有 ${total - right} 个没过的留在错题本，下次再抽。` });
       const actions = box.createDiv({ cls: "hll-actions" });
       if (right === total) {
         const b = actions.createEl("button", { cls: "hll-btn is-primary", text: "下一组 →" });
@@ -2340,6 +2374,17 @@ module.exports = class HaoLanguageLearn extends Plugin {
     });
     await this.saveData(this.data);
     return { groups: ids.size, words, wrongs };
+  }
+
+  // 某个卡组的错题（gid 为空 = 全部）
+  wrongWordsOf(gid) {
+    const wb = this.data.progress.wrong || {};
+    const out = [];
+    Object.keys(wb).forEach((w) => {
+      const it = wb[w] || {};
+      if (gid == null || Number(it.gid) === Number(gid)) out.push({ w, gid: it.gid, n: it.n || 1 });
+    });
+    return out;
   }
 
   addWrong(word, gid) {
