@@ -190,6 +190,7 @@ const DEFAULT_SETTINGS = {
   wordFile: "领域/学习/英语/单词库.json",
   grammarFile: "领域/学习/英语/语法库.json",
   exampleFile: "领域/学习/英语/例句库.json",   // 例句库（英文 + 中文翻译）
+  progressFile: "领域/学习/英语/学习进度.json",  // 学习进度（随 vault 同步；data.json 只放本机授权）
   autoSpeak: false,      // 卡片出现时自动读一遍
   showPhonetic: true,    // 卡片上是否显示音标
   showMeaning: true,     // 卡片上是否显示中文释义（可随时「收起」）
@@ -1042,7 +1043,11 @@ module.exports = class HaoLanguageLearn extends Plugin {
     const raw = await this.loadData();
     this.data = Object.assign({}, DEFAULT_DATA, raw || {});
     this.data.settings = Object.assign({}, DEFAULT_SETTINGS, (raw && raw.settings) || {});
-    this.data.progress = Object.assign({}, DEFAULT_DATA.progress, (raw && raw.progress) || {});
+    // 进度优先读独立文件（随 vault 同步）；老版本读 data.json 里的 progress 并迁移过来
+    const fromFile = await this._readProgress();
+    const legacy = (raw && raw.progress) || null;
+    this.data.progress = Object.assign({}, DEFAULT_DATA.progress, fromFile || legacy || {});
+    if (!fromFile && legacy) this._writeProgress(this.data.progress);
 
     this._wordCache = null;
     this._gramCache = null;
@@ -1178,6 +1183,39 @@ module.exports = class HaoLanguageLearn extends Plugin {
     p.done[gid] = iso;
     p.lastGroup = gid;
     this.saveData(this.data);
+  }
+
+  async _readProgress() {
+    const path = this.data.settings.progressFile;
+    if (!path) return null;
+    const ad = this.app.vault.adapter;
+    try {
+      if (!(await ad.exists(path))) return null;
+      return JSON.parse(await ad.read(path));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async _writeProgress(prog) {
+    const path = this.data.settings.progressFile;
+    if (!path) return;
+    const ad = this.app.vault.adapter;
+    try {
+      const dir = path.split("/").slice(0, -1).join("/");
+      if (dir && !(await ad.exists(dir))) await ad.mkdir(dir);
+      await ad.write(path, JSON.stringify(prog || {}, null, 2) + "\n");
+    } catch (e) {
+      console.warn("[HaoLanguageLearn] 进度写入失败", e);
+    }
+  }
+
+  // 覆盖：data.json 只留本机属性（授权/试用/设置），学习进度写进 vault 里的独立文件
+  async saveData(data) {
+    const d = data || this.data;
+    const local = { license: d.license || null, trial: d.trial || null, settings: d.settings || {} };
+    await super.saveData(local);
+    await this._writeProgress(d.progress);
   }
 
   _trialKey() {
