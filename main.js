@@ -191,6 +191,7 @@ const DEFAULT_SETTINGS = {
   grammarFile: "领域/学习/英语/语法库.json",
   exampleFile: "领域/学习/英语/例句库.json",   // 例句库（英文 + 中文翻译）
   progressFile: "领域/学习/英语/学习进度.json",  // 学习进度（随 vault 同步；data.json 只放本机授权）
+  movieDir: "领域/学习/英语/影视",              // 影视英语：字幕与视频放这里（可递归）
   autoSpeak: false,      // 卡片出现时自动读一遍
   showPhonetic: true,    // 卡片上是否显示音标
   showMeaning: true,     // 卡片上是否显示中文释义（可随时「收起」）
@@ -199,6 +200,94 @@ const DEFAULT_SETTINGS = {
   voice: "female",       // 发音音色：female / male
   trialDays: 7,          // 未激活试用天数
 };
+
+
+
+// 点句子里的词时先查原形，再按常见词尾还原（thinking → think，studies → study）
+function lookupWord(dict, raw) {
+  const clean = String(raw || "").replace(/^[^A-Za-z']+|[^A-Za-z']+$/g, "").toLowerCase();
+  if (!clean) return null;
+  const forms = [clean];
+  if (/ies$/.test(clean)) forms.push(clean.replace(/ies$/, "y"));
+  if (/ied$/.test(clean)) forms.push(clean.replace(/ied$/, "y"));
+  if (/ing$/.test(clean)) {
+    const b = clean.replace(/ing$/, "");
+    forms.push(b, b + "e");
+    if (/([b-df-hj-np-tv-z])\1$/.test(b)) forms.push(b.slice(0, -1));
+  }
+  if (/(ed|d)$/.test(clean)) forms.push(clean.replace(/(ed|d)$/, ""));
+  if (/(es|s)$/.test(clean)) forms.push(clean.replace(/(es|s)$/, ""));
+  if (/ly$/.test(clean)) forms.push(clean.replace(/ly$/, ""));
+  if (/(est|er)$/.test(clean)) forms.push(clean.replace(/(est|er)$/, ""));
+  for (const f of forms) {
+    if (f && dict.has(f)) return { hit: dict.get(f), form: f, inflected: f !== clean };
+  }
+  return null;
+}
+
+/* ---------- 影视字幕 ---------- */
+function isCJK(str) { return /[\u4e00-\u9fff]/.test(String(str || "")); }
+
+function srtTime(str) {
+  const m = String(str).trim().match(/(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/);
+  if (!m) return null;
+  return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4].padEnd(3, "0")) / 1000;
+}
+
+function fmtClock(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return (h ? `${h}:${pad(m)}` : `${pad(m)}`) + `:${pad(ss)}`;
+}
+
+// 兼容 srt / vtt：按空行切块，抓时间轴，剩余行当文本；两行且第二行是中文 → 认成双语
+function parseSubs(text) {
+  const raw = String(text || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+  const out = [];
+  raw.split(/\n{2,}/).forEach((block) => {
+    const lines = block.split("\n").map((l) => l.trim()).filter((l) => l && l !== "WEBVTT" && !/^NOTE\b/.test(l));
+    if (!lines.length) return;
+    let start = null;
+    let end = null;
+    let i = 0;
+    for (; i < lines.length; i++) {
+      if (lines[i].includes("-->")) {
+        const parts = lines[i].split("-->");
+        start = srtTime(parts[0]);
+        end = srtTime(parts[1]);
+        i += 1;
+        break;
+      }
+      if (/^\d+$/.test(lines[i])) continue;   // srt 序号行
+    }
+    if (start == null || i >= lines.length) return;
+    const body = lines.slice(i).map((l) => l.replace(/<[^>]+>/g, "").replace(/\{[^}]*\}/g, "").trim()).filter(Boolean);
+    if (!body.length) return;
+    let en = body.filter((l) => !isCJK(l)).join(" ").trim();
+    let zh = body.filter((l) => isCJK(l)).join(" ").trim();
+    if (!en) { en = body.join(" ").trim(); zh = ""; }   // 纯中文轨当不了主字幕，交给配对
+    out.push({ start, end: end == null ? start + 2 : end, en, zh });
+  });
+  return out;
+}
+
+// 两条字幕轨按时间重叠配对
+function pairSubs(enCues, zhCues) {
+  if (!zhCues || !zhCues.length) return enCues;
+  return enCues.map((c) => {
+    if (c.zh) return c;
+    let best = null;
+    let bestOverlap = 0;
+    for (const z of zhCues) {
+      const overlap = Math.min(c.end, z.end) - Math.max(c.start, z.start);
+      if (overlap > bestOverlap) { bestOverlap = overlap; best = z; }
+    }
+    return best && bestOverlap > 0 ? { ...c, zh: best.en || best.zh || "" } : c;
+  });
+}
 
 // 艾宾浩斯复习节奏：隔天 → 隔周 → 隔月 → 三月（天）
 const SRS_STEPS = [1, 7, 30, 90];
@@ -356,7 +445,9 @@ class HaoLanguageLearnView extends ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
-    this.tab = "words";        // words | grammar
+    this.tab = "words";        // words | groups | srs | movies | grammar
+    this.movie = null;         // 影视英语：当前打开的片
+    this.movieIdx = 0;
     this.mode = "cards";       // cards | quiz | done
     this.queue = [];
     this.idx = 0;
@@ -390,6 +481,7 @@ class HaoLanguageLearnView extends ItemView {
     if (this.tab === "words") await this.drawWords(body);
     else if (this.tab === "groups") await this.drawGroups(body);
     else if (this.tab === "srs") await this.drawCurve(body);
+    else if (this.tab === "movies") await this.drawMovies(body);
     else await this.drawGrammar(body);
   }
 
@@ -529,7 +621,7 @@ class HaoLanguageLearnView extends ItemView {
     };
 
     const tabs = head.createDiv({ cls: "hll-tabs" });
-    [["words", "单词学习"], ["groups", "卡组总览"], ["srs", "复习曲线"], ["grammar", "语法学习"]].forEach(([k, label]) => {
+    [["words", "单词学习"], ["groups", "卡组总览"], ["srs", "复习曲线"], ["movies", "影视英语"], ["grammar", "语法学习"]].forEach(([k, label]) => {
       const b = tabs.createEl("button", {
         cls: "hll-tab" + (this.tab === k ? " is-active" : ""),
         text: label,
@@ -1114,6 +1206,106 @@ class HaoLanguageLearnView extends ItemView {
     });
   }
 
+  /* ================= 影视英语 ================= */
+  async drawMovies(parent) {
+    if (this.movie) return this.drawMovieLines(parent);
+    const dir = this.plugin.data.settings.movieDir;
+    parent.createDiv({ cls: "hll-sec-title", text: "影视英语" });
+    parent.createDiv({ cls: "hll-muted", text: `字幕与视频放在 ${dir}（可多层目录）。插件只做解析和逐句学习，不带片源。` });
+
+    let list = [];
+    try { list = await this.plugin._listMovies(); } catch (e) { list = []; }
+    if (!list.length) {
+      const box = parent.createDiv({ cls: "hll-empty" });
+      box.createDiv({ cls: "hll-empty-title", text: "还没找到字幕文件" });
+      box.createDiv({ cls: "hll-muted", text: `放一集进来就能用：${dir}/片名/片名.srt；可选 片名.zh.srt（中文字幕）与 片名.mp4（视频）` });
+      return;
+    }
+    const grid = parent.createDiv({ cls: "hll-movies" });
+    for (const f of list) {
+      let m;
+      try { m = await this.plugin.loadMovie(f); } catch (e) { continue; }
+      if (!m.cues.length) continue;
+      const card = grid.createDiv({ cls: "hll-movie" });
+      card.createDiv({ cls: "hll-movie-name", text: m.name });
+      const meta = card.createDiv({ cls: "hll-movie-meta" });
+      meta.createSpan({ cls: "hll-movie-tag", text: `${m.cues.length} 句` });
+      if (m.hasZh) meta.createSpan({ cls: "hll-movie-tag is-on", text: "中英对照" });
+      if (m.video) meta.createSpan({ cls: "hll-movie-tag", text: "有视频" });
+      const go = card.createEl("button", { cls: "hll-btn is-primary", text: "开始" });
+      go.onclick = () => { this.movie = m; this.movieIdx = 0; this.render(); };
+    }
+  }
+
+  async drawMovieLines(parent) {
+    const m = this.movie;
+    if (!m || !m.cues.length) { this.movie = null; return this.drawMovies(parent); }
+    if (this.movieIdx >= m.cues.length) this.movieIdx = m.cues.length - 1;
+    if (this.movieIdx < 0) this.movieIdx = 0;
+    const cue = m.cues[this.movieIdx];
+
+    const bar = parent.createDiv({ cls: "hll-bar" });
+    const left = bar.createDiv({ cls: "hll-bar-left" });
+    const back = left.createEl("button", { cls: "hll-icon-btn" });
+    setIcon(back, "arrow-left");
+    back.title = "回到片单";
+    back.onclick = () => { this.movie = null; this.render(); };
+    left.createSpan({ cls: "hll-badge", text: m.name });
+    left.createSpan({ cls: "hll-muted", text: `${this.movieIdx + 1} / ${m.cues.length}` });
+    const right = bar.createDiv({ cls: "hll-bar-right" });
+    const star = right.createEl("button", { cls: "hll-btn", text: "收藏这句" });
+    star.onclick = async () => {
+      const r = await this.plugin.collectLine(m.name, cue);
+      new Notice(r.ok ? "已收藏到 收藏.md" : (r.dup ? "这句已经收藏过了" : `收藏失败：${r.error}`));
+    };
+    const say = right.createEl("button", { cls: "hll-btn", text: "朗读" });
+    say.onclick = () => this.plugin.say(cue.en, 0.95);
+
+    const card = parent.createDiv({ cls: "hll-card hll-movie-card" });
+    card.createDiv({ cls: "hll-film-time", text: fmtClock(cue.start) + (cue.end ? ` — ${fmtClock(cue.end)}` : "") });
+
+    // 英文：逐词可点
+    const enLine = card.createDiv({ cls: "hll-film-en" });
+    const words = await this.plugin.loadWords();
+    const dict = new Map();
+    if (words && words.groups) words.groups.forEach((g) => g.words.forEach((w) => dict.set(String(w.w).toLowerCase(), w)));
+    String(cue.en).split(/(\s+)/).forEach((tok) => {
+      if (!tok.trim()) { enLine.createSpan({ text: tok }); return; }
+      const found = lookupWord(dict, tok);
+      const span = enLine.createSpan({ cls: "hll-w" + (found ? " is-known" : ""), text: tok });
+      span.onclick = () => {
+        if (!found) { new Notice(`${tok.trim()}：词库里没有，先记下来`); this.plugin.say(tok); return; }
+        const head = found.inflected ? `${tok.trim()} → ${found.hit.w}` : found.hit.w;
+        new Notice(`${head} ${found.hit.ph || ""} · ${found.hit.zh || ""}`, 6000);
+        this.plugin.say(found.hit.w);
+      };
+    });
+
+    if (cue.zh) card.createDiv({ cls: "hll-film-zh", text: cue.zh });
+
+    if (m.video) {
+      let src = "";
+      try { src = this.plugin.app.vault.adapter.getResourcePath(m.video); } catch (e) { src = ""; }
+      if (src) {
+        const wrap = parent.createDiv({ cls: "hll-film-video" });
+        const v = wrap.createEl("video");
+        v.src = src; v.controls = true; v.preload = "metadata";
+        const jump = wrap.createEl("button", { cls: "hll-btn", text: `跳到 ${fmtClock(cue.start)} 播放` });
+        jump.onclick = () => {
+          try { v.currentTime = cue.start; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* 忽略 */ }
+        };
+      }
+    }
+
+    const nav = parent.createDiv({ cls: "hll-actions hll-film-nav" });
+    const prev = nav.createEl("button", { cls: "hll-btn", text: "‹ 上一句" });
+    prev.disabled = this.movieIdx === 0;
+    prev.onclick = () => { this.movieIdx -= 1; this.render(); };
+    const next = nav.createEl("button", { cls: "hll-btn is-primary", text: "下一句 ›" });
+    next.disabled = this.movieIdx >= m.cues.length - 1;
+    next.onclick = () => { this.movieIdx += 1; this.render(); };
+  }
+
   /* ================= 复习曲线（艾宾浩斯）================= */
   async drawCurve(parent) {
     const db = await this.plugin.loadWords();
@@ -1494,6 +1686,69 @@ module.exports = class HaoLanguageLearn extends Plugin {
   }
 
   // ---- 艾宾浩斯复习（SRS）----
+  // ---- 影视英语（字幕驱动，不自带片源）----
+  async _listMovies() {
+    const dir = String(this.data.settings.movieDir || "").trim();
+    const ad = this.app.vault.adapter;
+    if (!dir) return [];
+    try { if (!(await ad.exists(dir))) return []; } catch (e) { return []; }
+    const files = [];
+    const walk = async (path) => {
+      let r;
+      try { r = await ad.list(path); } catch (e) { return; }
+      (r.files || []).forEach((f) => files.push(f));
+      for (const sub of (r.folders || [])) await walk(sub);
+    };
+    await walk(dir);
+    return files
+      .filter((f) => /\.(srt|vtt)$/i.test(f))
+      .filter((f) => !/(^|[.\-_])(zh|cn|chs|chi)\.(srt|vtt)$/i.test(f))
+      .sort();
+  }
+
+  async loadMovie(path) {
+    const ad = this.app.vault.adapter;
+    let en = [];
+    try { en = parseSubs(await ad.read(path)); } catch (e) { en = []; }
+    const zhPath = String(path).replace(/\.(srt|vtt)$/i, ".zh.$1");
+    let zh = [];
+    try { if (await ad.exists(zhPath)) zh = parseSubs(await ad.read(zhPath)); } catch (e) { zh = []; }
+    let video = null;
+    for (const ext of ["mp4", "mkv", "webm", "mov", "m4v"]) {
+      const cand = String(path).replace(/\.(srt|vtt)$/i, `.${ext}`);
+      try { if (await ad.exists(cand)) { video = cand; break; } } catch (e) { /* 继续试 */ }
+    }
+    const cues = pairSubs(en, zh).filter((c) => c.en);
+    return {
+      path,
+      name: String(path).split("/").pop().replace(/\.(srt|vtt)$/i, ""),
+      cues,
+      hasZh: cues.some((c) => c.zh),
+      video,
+    };
+  }
+
+  // 收藏整句到 <movieDir>/收藏.md
+  async collectLine(movieName, cue) {
+    const dir = String(this.data.settings.movieDir || "").trim();
+    if (!dir) return { ok: false, error: "没设置影视目录" };
+    const file = `${dir}/收藏.md`;
+    const ad = this.app.vault.adapter;
+    const esc = (t) => String(t || "").replace(/\|/g, "\\|");
+    const line = `| ${esc(movieName)} | ${fmtClock(cue.start)} | ${esc(cue.en)} | ${esc(cue.zh)} |`;
+    try {
+      if (!(await ad.exists(file))) {
+        await ad.write(file, "---\ntitle: 影视英语收藏\ntype: 学习\n---\n\n# 影视英语收藏\n\n| 片名 | 时间 | 英文 | 中文 |\n|---|---|---|---|\n");
+      }
+      const cur = await ad.read(file);
+      if (cur.includes(cue.en)) return { ok: false, dup: true };
+      await ad.write(file, cur.replace(/\s*$/, "\n") + line + "\n");
+      return { ok: true, file };
+    } catch (e) {
+      return { ok: false, error: String((e && e.message) || e) };
+    }
+  }
+
   say(text, rate) {
     const st = this.data.settings || {};
     return speak(text, rate == null ? st.rate : rate, st.voice === "male" ? "male" : "female");

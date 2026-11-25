@@ -443,3 +443,26 @@
 .hll-inner .hll-pill-zh { font-size:11px; color:var(--text-faint); }
 .hll-inner .hll-pill-more { font-size:11px; color:var(--text-faint); align-self:center; }
 .hll-inner .hll-curve-acts { margin-top:16px; }
+
+/* 影视英语 */
+.hll-inner .hll-movies { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; margin-top:12px; }
+.hll-inner .hll-movie { display:flex; flex-direction:column; gap:8px; padding:14px; border:1px solid var(--background-modifier-border); border-radius:12px; background:var(--background-primary); }
+.hll-inner .hll-movie-name { font-size:14px; font-weight:600; word-break:break-all; }
+.hll-inner .hll-movie-meta { display:flex; flex-wrap:wrap; gap:6px; }
+.hll-inner .hll-movie-tag { font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid var(--background-modifier-border); color:var(--text-faint); }
+.hll-inner .hll-movie-tag.is-on { color:var(--interactive-accent,#4a8f68); border-color:var(--interactive-accent,#4a8f68); }
+.hll-inner .hll-empty-title { font-size:14px; font-weight:600; margin-bottom:6px; }
+.hll-inner .hll-movie-card {
+  align-items:flex-start; text-align:left; gap:10px; width:100%; max-width:none;
+  min-height:0; justify-content:flex-start; padding:16px 18px;
+}
+.hll-inner .hll-film-time { font-size:12px; color:var(--text-faint); font-variant-numeric:tabular-nums; }
+.hll-inner .hll-film-en { font-size:20px; line-height:1.6; font-weight:500; }
+.hll-inner .hll-film-zh { font-size:14px; color:var(--text-muted); }
+.hll-inner .hll-w { cursor:pointer; border-radius:4px; padding:0 1px; }
+.hll-inner .hll-w:hover { background:color-mix(in srgb, var(--interactive-accent,#4a8f68) 14%, transparent); }
+.hll-inner .hll-w.is-known { border-bottom:1px dotted color-mix(in srgb, var(--interactive-accent,#4a8f68) 65%, transparent); }
+.hll-inner .hll-film-video { display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+.hll-inner .hll-film-video video { width:100%; max-height:260px; border-radius:10px; background:#000; }
+.hll-inner .hll-film-video .hll-btn, .hll-inner .hll-movie .hll-btn { align-self:flex-start; }
+.hll-inner .hll-film-nav { margin-top:14px; }
