@@ -490,3 +490,11 @@
 .hll-inner .hll-mini-btn { font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--background-modifier-border); background:transparent; color:var(--text-muted); cursor:pointer; }
 .hll-inner .hll-mini-btn.is-on { background:var(--interactive-accent,#4a8f68); color:#fff; border-color:var(--interactive-accent,#4a8f68); }
 .hll-inner .hll-scene-card { min-height:0; width:100%; max-width:none; align-items:flex-start; text-align:left; padding:16px 18px; }
+
+/* 场景英语：长句标签 */
+.hll-inner .hll-long-tag {
+  display:inline-block; margin-left:6px; padding:0 5px; border-radius:4px;
+  font-size:10px; line-height:15px; color:var(--interactive-accent,#4a8f68);
+  border:1px solid color-mix(in srgb, var(--interactive-accent,#4a8f68) 45%, transparent);
+  vertical-align:1px;
+}
