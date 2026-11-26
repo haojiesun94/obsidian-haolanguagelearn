@@ -720,11 +720,17 @@ class HaoLanguageLearnView extends ItemView {
     wrongBtn.disabled = wrongCount === 0;
     if (!wrongCount) wrongBtn.title = "还没有错题，卡片上点 ☆ 可以加入";
     const groupWrong = this.plugin.wrongWordsOf(gid).length;
-    const quizBtn = right.createEl("button", { cls: "hll-btn", text: groupWrong ? `错题抽查 ${groupWrong}` : "错题抽查" });
-    quizBtn.title = groupWrong ? "只抽这一组的错题；答对即移出错题本" : "这组没有错题，点一下直接算通过";
+    const groupPassed = !!this.plugin.data.progress.done[gid];
+    const quizBtn = right.createEl("button", {
+      cls: "hll-btn" + (groupPassed ? "" : " is-primary"),
+      text: groupWrong ? `错题抽查 ${groupWrong}` : (groupPassed ? "再测一遍" : `开始测试 ${group.words.length}`),
+    });
+    quizBtn.title = groupWrong
+      ? "只测这一组的错题；全对即通过，这组完成"
+      : (groupPassed ? "这组已通过，想复核可以再测一遍" : "学完必须测一遍，全对才算完成");
     const nextBtn = right.createEl("button", { cls: "hll-btn is-primary", text: "下一组 →" });
-    nextBtn.disabled = mastered.size < group.words.length;
-    if (nextBtn.disabled) nextBtn.title = "先把这一组全部标记为「记住了」";
+    nextBtn.disabled = !groupPassed;
+    if (nextBtn.disabled) nextBtn.title = mastered.size < group.words.length ? "先把这一组全部标记为「记住了」" : "先做测试，全对才算完成";
 
     const bar2 = parent.createDiv({ cls: "hll-progress" });
     const fill = bar2.createDiv({ cls: "hll-progress-fill" });
@@ -768,20 +774,28 @@ class HaoLanguageLearnView extends ItemView {
       b.onclick = () => { this.wordMode = "study"; this.queue = []; this.currentGroupId = 0; this.render(); };
     } else if (this.mode === "quiz") { this.drawQuiz(stage, group, gid); }
     else if (this.queue.length === 0 && mastered.size >= group.words.length) {
-      const doneBox = stage.createDiv({ cls: "hll-done" });
-      doneBox.createDiv({ cls: "hll-done-emoji", text: "✓" });
-      doneBox.createDiv({ cls: "hll-done-title", text: `卡组 #${gid} 完成` });
+      const passed = !!this.plugin.data.progress.done[gid];
       const dn = this.plugin.wrongWordsOf(gid).length;
-      doneBox.createDiv({ cls: "hll-muted", text: dn ? `还有 ${dn} 个错题，抽一遍过了就结束。` : "错题已经清空，这组算过关 ✓" });
-      const b = doneBox.createEl("button", { cls: "hll-btn is-primary", text: dn ? `错题抽查 ${dn}` : "算通过 ✓" });
+      const qz = this.plugin.data.progress.quiz[gid] || {};
+      const doneBox = stage.createDiv({ cls: "hll-done" });
+      doneBox.createDiv({ cls: "hll-done-emoji", text: passed ? "✓" : "…" });
+      doneBox.createDiv({ cls: "hll-done-title", text: passed ? `卡组 #${gid} 完成 ✓` : `卡组 #${gid}：${group.words.length} 个词都学完了` });
+      doneBox.createDiv({ cls: "hll-muted", text: passed
+        ? (qz.total ? `测试成绩 ${qz.right}/${qz.total}（${qz.total >= group.words.length ? "整组测试" : "错题抽查"}）· 通过` : "测试已通过")
+        : (dn ? `还差测试：先考这 ${dn} 个错题，全对就完成。` : `还差一次测试：整组 ${group.words.length} 题，全对才算完成。`) });
+      const b = doneBox.createEl("button", { cls: "hll-btn is-primary", text: passed ? "再测一遍" : (dn ? `错题抽查 ${dn}` : "开始测试") });
       b.onclick = () => { this.startQuiz(group, gid); };
+      if (passed) {
+        const nb = doneBox.createEl("button", { cls: "hll-btn", text: "下一组 →" });
+        nb.onclick = () => this.goNextGroup();
+      }
     } else if (this.queue.length === 0) {
-      // 剩下的都已掌握但未抽查 —— 直接给下一组
+      // 复习池为空等边缘情况
       const box = stage.createDiv({ cls: "hll-done" });
       box.createDiv({ cls: "hll-done-title", text: "这一组已全部标记" });
-      box.createDiv({ cls: "hll-muted", text: "可以抽查，或直接进下一组。" });
-      const b = box.createEl("button", { cls: "hll-btn is-primary", text: "下一组 →" });
-      b.onclick = () => this.goNextGroup();
+      box.createDiv({ cls: "hll-muted", text: "做完测试才算完成。" });
+      const b = box.createEl("button", { cls: "hll-btn is-primary", text: "开始测试" });
+      b.onclick = () => { this.startQuiz(group, gid); };
     } else {
       await this.drawCard(stage, group, gid, mastered);
     }
@@ -804,10 +818,17 @@ class HaoLanguageLearnView extends ItemView {
       const chips = hist.createDiv({ cls: "hll-chips" });
       doneGroups.slice(-12).forEach((g) => {
         const q = (this.plugin.data.progress.quiz[g] || {});
+        const gObj = groups.find((x) => Number(x.id) === Number(g)) || {};
+        const gSize = (gObj.words || []).length;
         const c = chips.createDiv({ cls: "hll-chip" + (g === gid ? " is-now" : "") });
         c.createSpan({ text: `✓ #${g}` });
-        if (q.total) c.createSpan({ cls: "hll-chip-q", text: ` ${q.right}/${q.total}` });
-        c.title = `完成于 ${this.plugin.data.progress.done[g] || ""}`;
+        if (gSize) c.createSpan({ cls: "hll-chip-q", text: ` ${gSize}/${gSize}` });
+        else if (q.total) c.createSpan({ cls: "hll-chip-q", text: ` ${q.right}/${q.total}` });
+        c.title = [
+          `完成于 ${this.plugin.data.progress.done[g] || ""}`,
+          q.total ? `测试 ${q.right}/${q.total}` : "",
+          "整组已通过",
+        ].filter(Boolean).join(" · ");
         c.onclick = () => { this.mode = "cards"; this.queue = []; this.currentGroupId = 0; this.plugin.data.progress.cursor = g; this.plugin.saveData(this.plugin.data); this.render(); };
       });
     }
@@ -1050,10 +1071,9 @@ class HaoLanguageLearnView extends ItemView {
     this.render();
   }
 
-  // 抽查只抽错题：错题通过了就移出错题本，这组不再重复抽查
+  // 测试（抽查）：有错题只考错题；没有错题 → 整组测一遍，学完必须测过才算完成
   async startQuiz(group, gid) {
     const wrongs = this.plugin.wrongWordsOf(gid);
-    if (!wrongs.length) { this.finishGroupClean(gid); return; }
     const byWord = new Map();
     ((group && group.words) || []).forEach((w) => byWord.set(w.w, w));
     if (wrongs.some((it) => !byWord.has(it.w))) {
@@ -1062,24 +1082,14 @@ class HaoLanguageLearnView extends ItemView {
         ((db && db.groups) || []).forEach((g) => (g.words || []).forEach((w) => { if (!byWord.has(w.w)) byWord.set(w.w, w); }));
       } catch (e) { /* 用组内数据兜底 */ }
     }
-    const items = wrongs.map((it) => {
+    const onlyWrong = wrongs.length > 0;
+    const src = onlyWrong ? wrongs : ((group && group.words) || []).map((w) => ({ w: w.w }));
+    const items = src.map((it) => {
       const w = byWord.get(it.w) || {};
-      return { w: it.w, ph: w.ph || "", zh: w.zh || "", gid, fromWrong: true };
+      return { w: it.w, ph: w.ph || "", zh: w.zh || "", gid, fromWrong: onlyWrong };
     }).filter((x) => x.zh);
-    if (!items.length) { new Notice("这组的错题在词库里找不到释义"); return; }
-    this.startQuizItems(items, `错题 · 卡组 #${gid}`, gid);
-  }
-
-  // 这组没有错题 → 直接算过关
-  finishGroupClean(gid) {
-    this.plugin.markGroupDone(gid);
-    new Notice(`卡组 #${gid} 没有错题，直接算通过 ✓`);
-    this.mode = "cards";
-    this.quizList = [];
-    this.quizIdx = 0;
-    this.queue = [];
-    this.currentGroupId = 0;
-    this.render();
+    if (!items.length) { new Notice("这组的词在词库里找不到释义"); return; }
+    this.startQuizItems(items, onlyWrong ? `错题 · 卡组 #${gid}` : `测试 · 卡组 #${gid}`, gid);
   }
 
   drawQuiz(stage, group, gid) {
@@ -1220,14 +1230,16 @@ class HaoLanguageLearnView extends ItemView {
 
     // 完成状态筛选（与难度叠加）
     const levelGroups = groups.filter((g) => this.levelFilter === "all" || g.level === this.levelFilter);
+    const needTest = (g) => !done[g.id] && (mastered[g.id] || []).length >= (g.words || []).length;
     const cnt = {
       all: levelGroups.length,
       done: levelGroups.filter((g) => !!done[g.id]).length,
-      doing: levelGroups.filter((g) => !done[g.id] && (mastered[g.id] || []).length > 0).length,
+      test: levelGroups.filter(needTest).length,
+      doing: levelGroups.filter((g) => !done[g.id] && (mastered[g.id] || []).length > 0 && !needTest(g)).length,
       none: levelGroups.filter((g) => !done[g.id] && (mastered[g.id] || []).length === 0).length,
     };
     const sChips = parent.createDiv({ cls: "hll-chips hll-cats hll-status-chips" });
-    [["all", "全部状态", cnt.all], ["done", "✓ 已过关", cnt.done],
+    [["all", "全部状态", cnt.all], ["done", "✓ 已过关", cnt.done], ["test", "待测试", cnt.test],
      ["doing", "练过一部分", cnt.doing], ["none", "未开始", cnt.none]].forEach(([id, name, n]) => {
       const b = sChips.createEl("button", {
         cls: "hll-cat" + (this.statusFilter === id ? " is-active" : ""),
@@ -1276,7 +1288,8 @@ class HaoLanguageLearnView extends ItemView {
       const m = (mastered[g.id] || []).length;
       const isDone = !!done[g.id];
       if (this.statusFilter === "done") return isDone;
-      if (this.statusFilter === "doing") return !isDone && m > 0;
+      if (this.statusFilter === "test") return needTest(g);
+      if (this.statusFilter === "doing") return !isDone && m > 0 && m < (g.words || []).length;
       if (this.statusFilter === "none") return !isDone && m === 0;
       return true;
     });
@@ -1289,14 +1302,15 @@ class HaoLanguageLearnView extends ItemView {
       const m = (mastered[g.id] || []).length;
       const isDone = !!done[g.id];
       const isCur = (prog.cursor || 1) === g.id;
+      const needTest = !isDone && m >= (g.words || []).length;
       const tile = grid.createDiv({
         cls: "hll-tile"
-          + (isDone ? " is-done" : m > 0 ? " is-partial" : "")
+          + (isDone ? " is-done" : needTest ? " is-test" : m > 0 ? " is-partial" : "")
           + (isCur ? " is-current" : "")
           + (this.multiSel.has(g.id) ? " is-sel" : ""),
       });
       tile.createDiv({ cls: "hll-tile-id", text: "#" + g.id });
-      tile.createDiv({ cls: "hll-tile-meta", text: isDone ? `✓ ${m}/20` : `${m}/20` });
+      tile.createDiv({ cls: "hll-tile-meta", text: isDone ? `✓ ${m}/${(g.words || []).length}` : needTest ? `待测试 ${m}/${(g.words || []).length}` : `${m}/${(g.words || []).length}` });
       if (isDone) tile.createDiv({ cls: "hll-tile-date", text: (done[g.id] || "").slice(5) });
       tile.onclick = () => {
         if (this.multiMode) {
@@ -1317,7 +1331,7 @@ class HaoLanguageLearnView extends ItemView {
 
     // 图例
     const legend = parent.createDiv({ cls: "hll-legend" });
-    [["is-done", "已过关"], ["is-partial", "练过一部分"], ["is-current", "当前卡组"], ["", "未开始"]].forEach(([cls, label]) => {
+    [["is-done", "已过关"], ["is-test", "待测试"], ["is-partial", "练过一部分"], ["is-current", "当前卡组"], ["", "未开始"]].forEach(([cls, label]) => {
       const item = legend.createDiv({ cls: "hll-legend-item" });
       item.createSpan({ cls: "hll-dot " + cls });
       item.createSpan({ text: label });
