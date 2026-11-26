@@ -812,11 +812,13 @@ class HaoLanguageLearnView extends ItemView {
     quizBtn.onclick = () => this.startQuiz(group, gid);
     nextBtn.onclick = () => this.goNextGroup();
 
-    if (doneGroups.length) {
+    // 现场重算：这一步必须在抽测标记过关之后，否则刚完成的卡组要等下一次重绘才出现
+    const doneNow = Object.keys(this.plugin.data.progress.done || {}).map(Number).sort((a, b) => a - b);
+    if (doneNow.length) {
       const hist = parent.createDiv({ cls: "hll-hist" });
-      hist.createDiv({ cls: "hll-hist-title", text: `已练卡组（${doneGroups.length}）` });
+      hist.createDiv({ cls: "hll-hist-title", text: `已练卡组（${doneNow.length}）` });
       const chips = hist.createDiv({ cls: "hll-chips" });
-      doneGroups.slice(-12).forEach((g) => {
+      doneNow.slice(-12).forEach((g) => {
         const q = (this.plugin.data.progress.quiz[g] || {});
         const gObj = groups.find((x) => Number(x.id) === Number(g)) || {};
         const gSize = (gObj.words || []).length;
