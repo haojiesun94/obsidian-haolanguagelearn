@@ -1147,8 +1147,12 @@ class HaoLanguageLearnView extends ItemView {
     this._mcAnswered = word.w;
     if (ok) {
       this.quizRight += 1;
-      if (word.fromWrong) this.plugin.removeWrong(word.w);
-      if (this.plugin.isMastered(word.w)) this.plugin.reviewAnswer(word.w, true);
+      if (word.fromWrong) {
+        this.plugin.removeWrong(word.w);
+        this.plugin.markMastered(word.gid, word.w);   // 错题通过 → 回到「已掌握」
+      }
+      // 抽查/测试答对不改复习阶梯（阶梯只由复习卡推进），只保证明天到期
+      this.plugin.ensureDueTomorrow(word.w, word.gid);
     } else {
       this.plugin.unmarkMastered(word.gid, word.w);
       if (word.gid) this.plugin.addWrong(word.w, word.gid);
@@ -2146,6 +2150,7 @@ module.exports = class HaoLanguageLearn extends Plugin {
       e.lapses = (Number(e.lapses) || 0) + 1;
     }
     e.last = t;
+    e.rev = t;                       // 标记：这一档是复习卡推进的（不是抽查顺手推的）
     e.next = addDays(t, SRS_STEPS[e.stage]);
     return e;
   }
@@ -2424,6 +2429,27 @@ module.exports = class HaoLanguageLearn extends Plugin {
     });
     await this.saveData(this.data);
     return { groups: ids.size, words, wrongs };
+  }
+
+  // 保证「第二天必复习」：没有排期就建 stage 0 / 明天；今天才动过却跳到更远档位的，拉回明天
+  ensureDueTomorrow(word, gid) {
+    const mastered = Object.values(this.data.progress.mastered || {}).some((arr) => (arr || []).includes(word));
+    if (!mastered) return null;
+    const srs = this._srs();
+    const t = dateStr();
+    const tomorrow = addDays(t, SRS_STEPS[0]);
+    const e = srs[word];
+    if (!e) {
+      srs[word] = { gid: Number(gid) || 0, stage: 0, last: t, next: tomorrow, reps: 0, lapses: 0 };
+      this.saveData(this.data);
+      return srs[word];
+    }
+    if (String(e.last) === t && (Number(e.stage) || 0) > 0 && String(e.rev || "") !== t) {
+      e.stage = 0;
+      e.next = tomorrow;
+      this.saveData(this.data);
+    }
+    return e;
   }
 
   // 某个卡组的错题（gid 为空 = 全部）
