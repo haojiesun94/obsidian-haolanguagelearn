@@ -1310,7 +1310,9 @@ class HaoLanguageLearnView extends ItemView {
           + (this.multiSel.has(g.id) ? " is-sel" : ""),
       });
       tile.createDiv({ cls: "hll-tile-id", text: "#" + g.id });
-      tile.createDiv({ cls: "hll-tile-meta", text: isDone ? `✓ ${m}/${(g.words || []).length}` : needTest ? `待测试 ${m}/${(g.words || []).length}` : `${m}/${(g.words || []).length}` });
+      const gTotal = (g.words || []).length;
+      const mShow = isDone ? gTotal : m;
+      tile.createDiv({ cls: "hll-tile-meta", text: isDone ? `✓ ${mShow}/${gTotal}` : needTest ? `待测试 ${mShow}/${gTotal}` : `${mShow}/${gTotal}` });
       if (isDone) tile.createDiv({ cls: "hll-tile-date", text: (done[g.id] || "").slice(5) });
       tile.onclick = () => {
         if (this.multiMode) {
@@ -1773,6 +1775,12 @@ module.exports = class HaoLanguageLearn extends Plugin {
     if (!fromFile && legacy) this._writeProgress(this.data.progress);
     const migrated = this.migrateSrs();          // 老进度补复习排期
     if (migrated) this._writeProgress(this.data.progress);
+    // 历史数据修正：已过关的卡组补齐掌握标记（旧版错题抽查通过后没回写）
+    try {
+      const db0 = await this.loadWords();
+      const filled = await this.repairDoneGroups(db0);
+      if (filled) this._writeProgress(this.data.progress);
+    } catch (e) { /* 词库没读到就跳过 */ }
 
     this._wordCache = null;
     this._gramCache = null;
@@ -2243,6 +2251,32 @@ module.exports = class HaoLanguageLearn extends Plugin {
     if (!data) return null;
     this._gramCache = data;
     return data;
+  }
+
+  // 修正历史数据：已过关（done）的卡组，把没回写的掌握标记补齐
+  async repairDoneGroups(db) {
+    try {
+      const p = this.data.progress || {};
+      const done = p.done || {};
+      const mastered = (p.mastered = p.mastered || {});
+      const byId = new Map();
+      (((db && db.groups) || [])).forEach((g) => byId.set(Number(g.id), g));
+      let added = 0;
+      Object.keys(done).forEach((gid) => {
+        const g = byId.get(Number(gid));
+        if (!g) return;
+        const list = (mastered[gid] = mastered[gid] || []);
+        (g.words || []).forEach((w) => {
+          if (!list.includes(w.w)) {
+            list.push(w.w);
+            try { this.scheduleMaster(Number(gid), w.w); } catch (e) { /* 排期失败不影响标记 */ }
+            added += 1;
+          }
+        });
+      });
+      if (added) await this.saveData(this.data);
+      return added;
+    } catch (e) { return 0; }
   }
 
   markMastered(gid, word) {
