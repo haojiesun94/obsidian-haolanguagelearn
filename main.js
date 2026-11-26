@@ -229,8 +229,10 @@ function lookupWord(dict, raw) {
 }
 
 // 艾宾浩斯复习节奏：隔天 → 隔周 → 隔月 → 三月（天）
-const SRS_STEPS = [1, 7, 30, 90];
-const SRS_LABELS = ["隔天", "隔周", "隔月", "三月"];
+// 复习节点：相对「学会日」的偏移天数 —— 学会当天算 D1，所以 D2/D7/D30/D90 = +1/+6/+29/+89
+const SRS_STEPS = [1, 6, 29, 89];
+const SRS_LABELS = ["D2", "D7", "D30", "D90"];
+const SRS_NODE_NAMES = ["第 2 天", "第 7 天", "第 30 天", "第 90 天"];
 
 function dateStr(d) {
   const x = d || new Date();
@@ -961,8 +963,6 @@ class HaoLanguageLearnView extends ItemView {
         this.render();
       };
     } else {
-      const srsNow = (this.plugin.data.progress.srs || {})[word.w] || { stage: 0 };
-      const nextStage = Math.min((Number(srsNow.stage) || 0) + 1, SRS_STEPS.length - 1);
       const advance = async (ok) => {
         this._mcAnswered = word.w;
         this.plugin.reviewAnswer(word.w, ok);
@@ -1672,7 +1672,7 @@ class HaoLanguageLearnView extends ItemView {
     [0, 1, 2, 3].forEach((i) => {
       const cell = stageBox.createDiv({ cls: "hll-stage-cell" });
       cell.createSpan({ cls: "hll-stage-name", text: SRS_LABELS[i] });
-      cell.createSpan({ cls: "hll-stage-gap", text: `${SRS_STEPS[i]} 天` });
+      cell.createSpan({ cls: "hll-stage-gap", text: SRS_NODE_NAMES[i] });
       cell.createSpan({ cls: "hll-stage-n", text: `${byStage[i]} 词` });
     });
 
@@ -1780,7 +1780,8 @@ module.exports = class HaoLanguageLearn extends Plugin {
     this.data.progress = Object.assign({}, DEFAULT_DATA.progress, fromFile || legacy || {});
     if (!fromFile && legacy) this._writeProgress(this.data.progress);
     const migrated = this.migrateSrs();          // 老进度补复习排期
-    if (migrated) this._writeProgress(this.data.progress);
+    const baseFixed = this.migrateSrsBase();     // 老排期补「学会日」base
+    if (migrated || baseFixed) this._writeProgress(this.data.progress);
     // 历史数据修正：已过关的卡组补齐掌握标记（旧版错题抽查通过后没回写）
     try {
       const db0 = await this.loadWords();
@@ -2112,6 +2113,23 @@ module.exports = class HaoLanguageLearn extends Plugin {
   }
 
   // 老进度没有排期：已掌握的词补一条今天到期的记录（一次性）
+  // 老数据补 base（学会日）：用 next - 节点偏移 反推，超过今天就用今天
+  migrateSrsBase() {
+    const srs = this._srs();
+    const t = dateStr();
+    let n = 0;
+    Object.keys(srs).forEach((w) => {
+      const e = srs[w];
+      if (!e || e.base) return;
+      const st = Math.min(Math.max(Number(e.stage) || 0, 0), SRS_STEPS.length - 1);
+      let b = e.next ? addDays(e.next, -SRS_STEPS[st]) : (e.last || t);
+      if (b > t) b = t;
+      e.base = b;
+      n += 1;
+    });
+    return n;
+  }
+
   migrateSrs() {
     const srs = this._srs();
     const p = this.data.progress;
@@ -2122,7 +2140,7 @@ module.exports = class HaoLanguageLearn extends Plugin {
     });
     // 存量词按每天 20 个铺开，避免升级当天一次涌出几百个到期词
     queue.forEach((it, i) => {
-      srs[it.w] = { gid: it.gid, stage: 0, last: null,
+      srs[it.w] = { gid: it.gid, stage: 0, base: t, last: null,
                     next: addDays(t, Math.floor(i / 20)), reps: 0, lapses: 0 };
     });
     return queue.length;
@@ -2133,27 +2151,37 @@ module.exports = class HaoLanguageLearn extends Plugin {
     const srs = this._srs();
     if (srs[word]) return srs[word];
     const t = dateStr();
-    srs[word] = { gid: Number(gid) || 0, stage: 0, last: t, next: addDays(t, SRS_STEPS[0]), reps: 0, lapses: 0 };
+    srs[word] = { gid: Number(gid) || 0, stage: 0, base: t, last: t,
+                  next: addDays(t, SRS_STEPS[0]), reps: 0, lapses: 0 };
     return srs[word];
   }
 
   // 复习一次：记得 → 台阶 +1；忘了 → 回到隔天
+  // 答对 → 下一个节点（D2 → D7 → D30 → D90 → 再 90 天）；答错 → 退回 D2（第二天）
   reviewAnswer(word, ok) {
     const srs = this._srs();
-    const e = srs[word] || (srs[word] = { gid: 0, stage: 0, last: null, next: dateStr(), reps: 0, lapses: 0 });
     const t = dateStr();
+    const e = srs[word] || (srs[word] = { gid: 0, stage: 0, base: t, last: null,
+                                          next: addDays(t, SRS_STEPS[0]), reps: 0, lapses: 0 });
+    if (!e.base) e.base = e.last || t;
+    const last = SRS_STEPS.length - 1;
     if (ok) {
-      e.stage = Math.min((Number(e.stage) || 0) + 1, SRS_STEPS.length - 1);
+      e.stage = Math.min((Number(e.stage) || 0) + 1, last);
       e.reps = (Number(e.reps) || 0) + 1;
+      let nx = Number(e.stage) === last ? addDays(t, 90) : addDays(e.base, SRS_STEPS[e.stage]);
+      if (nx <= t) nx = addDays(t, 1);              // 节点已经过去（逾期太久）→ 明天补一次
+      e.next = nx;
     } else {
       e.stage = 0;
       e.lapses = (Number(e.lapses) || 0) + 1;
+      const node = addDays(e.base, SRS_STEPS[0]);   // 回退到 D2
+      e.next = node > t ? node : addDays(t, 1);
     }
     e.last = t;
     e.rev = t;                       // 标记：这一档是复习卡推进的（不是抽查顺手推的）
-    e.next = addDays(t, SRS_STEPS[e.stage]);
     return e;
   }
+
 
   isMastered(word) {
     const m = this.data.progress.mastered || {};
@@ -2440,7 +2468,7 @@ module.exports = class HaoLanguageLearn extends Plugin {
     const tomorrow = addDays(t, SRS_STEPS[0]);
     const e = srs[word];
     if (!e) {
-      srs[word] = { gid: Number(gid) || 0, stage: 0, last: t, next: tomorrow, reps: 0, lapses: 0 };
+      srs[word] = { gid: Number(gid) || 0, stage: 0, base: t, last: t, next: tomorrow, reps: 0, lapses: 0 };
       this.saveData(this.data);
       return srs[word];
     }
