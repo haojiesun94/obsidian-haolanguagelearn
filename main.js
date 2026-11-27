@@ -1074,6 +1074,9 @@ class HaoLanguageLearnView extends ItemView {
     this.revealed = false;
     this.quizGid = singleGid || null;
     this.quizLabel = label || "";
+    this._mcAnswered = null;      // 关键：清掉上一轮残留，否则首题会被当作「已答」而静默跳过
+    this._mc = null;
+    this._answeredInRun = new Set();
     this.mode = "quiz";
     this.tab = "words";
     this.render();
@@ -1106,7 +1109,10 @@ class HaoLanguageLearnView extends ItemView {
       const total = this.quizList.length;
       const right = this.quizRight;
       if (this.quizGid) this.plugin.saveQuiz(this.quizGid, right, total);
-      if (right === total && this.quizGid) this.plugin.markGroupDone(this.quizGid);
+      if (this.quizGid) {
+        if (right === total) this.plugin.markGroupDone(this.quizGid);
+        else this.plugin.unmarkGroupDone(this.quizGid);   // 没过就不算完成
+      }
       const box = stage.createDiv({ cls: "hll-done" });
       box.createDiv({ cls: "hll-done-emoji", text: right === total ? "✓" : "…" });
       box.createDiv({ cls: "hll-done-title", text: `抽查结束：${right} / ${total}` });
@@ -1157,7 +1163,9 @@ class HaoLanguageLearnView extends ItemView {
 
   // 抽查答题结果：对 → 出书/推进排期；错 → 进错题本、撤销掌握
   quizAnswer(word, ok) {
-    if (this._mcAnswered === word.w) return;
+    this._answeredInRun = this._answeredInRun || new Set();
+    if (this._answeredInRun.has(word.w)) return;
+    this._answeredInRun.add(word.w);
     this._mcAnswered = word.w;
     if (ok) {
       this.quizRight += 1;
@@ -1168,8 +1176,8 @@ class HaoLanguageLearnView extends ItemView {
       // 抽查/测试答对不改复习阶梯（阶梯只由复习卡推进），只保证明天到期
       this.plugin.ensureDueTomorrow(word.w, word.gid);
     } else {
-      this.plugin.unmarkMastered(word.gid, word.w);
-      if (word.gid) this.plugin.addWrong(word.w, word.gid);
+      if (word.gid != null) this.plugin.unmarkMastered(word.gid, word.w);
+      this.plugin.addWrong(word.w, word.gid != null ? word.gid : this.quizGid || 0);
     }
     this.render();
     // 测试模式：选对就直接进下一题；选错留 2 秒看正确答案
@@ -1874,6 +1882,7 @@ module.exports = class HaoLanguageLearn extends Plugin {
     const migrated = this.migrateSrs();          // 老进度补复习排期
     const baseFixed = this.migrateSrsBase();     // 老排期补「学会日」base
     if (migrated || baseFixed) this._writeProgress(this.data.progress);
+    try { this.reconcileDone(); } catch (e) { /* 校正失败不影响使用 */ }
     // 历史数据修正：已过关的卡组补齐掌握标记（旧版错题抽查通过后没回写）
     try {
       const db0 = await this.loadWords();
@@ -2459,11 +2468,35 @@ module.exports = class HaoLanguageLearn extends Plugin {
     this.saveData(this.data);
   }
 
+  unmarkGroupDone(gid) {
+    const done = this.data.progress.done || {};
+    if (done[gid]) { delete done[gid]; this.saveData(this.data); }
+  }
+
+  // 老数据校正：某组已写 done，但之后那场测试没过（right < total）→ 撤销过关
+  reconcileDone() {
+    const p = this.data.progress || {};
+    const done = p.done || {};
+    const quiz = p.quiz || {};
+    let n = 0;
+    Object.keys(done).forEach((gid) => {
+      const q = quiz[gid];
+      if (!q || !q.total || Number(q.right) >= Number(q.total)) return;
+      const at = Number((this.data.progress.doneAt || {})[gid]) || 0;
+      if (!at) return;                       // 老数据没有时间戳：不判断，避免误撤销历史过关
+      if (Number(q.at) > at) { delete done[gid]; n += 1; }
+    });
+    if (n) this.saveData(this.data);
+    return n;
+  }
+
   markGroupDone(gid) {
     const p = this.data.progress;
     const d = new Date();
     const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     p.done[gid] = iso;
+    p.doneAt = p.doneAt || {};
+    p.doneAt[gid] = Date.now();     // 精确到毫秒，用来判断「过关之后是否又有一次没过的测试」
     p.lastGroup = gid;
     this.saveData(this.data);
   }
