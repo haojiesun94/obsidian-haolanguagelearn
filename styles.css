@@ -587,3 +587,14 @@
 .hll-paused-btn { font-size:10.5px; padding:2px 8px; border-radius:999px; cursor:pointer; box-shadow:none;
   border:1px solid var(--background-modifier-border); background:var(--background-primary); color:var(--text-muted); }
 .hll-paused-btn:hover { border-color:var(--text-accent, #4a8f68); color:var(--text-accent, #4a8f68); }
+
+/* 移入无需复习：卡片底部的次级按钮 */
+.hll-inner .hll-actions .hll-pause-btn {
+  font-size: 0.78em; padding: 5px 14px; box-shadow: none;
+  background: transparent; color: var(--text-muted); border: 1px solid var(--background-modifier-border);
+}
+.hll-inner .hll-actions .hll-pause-btn:hover { color: var(--text-accent, #4a8f68); border-color: var(--text-accent, #4a8f68); background: transparent; }
+
+/* 顶栏第三个图标：跟在发音后面，不要再 auto 推到最右 */
+.hll-inner button.hll-star.hll-pause-ico { margin-left: 2px; }
+.hll-inner button.hll-star.hll-pause-ico:hover { color: var(--text-accent, #4a8f68); background: var(--background-modifier-hover); }

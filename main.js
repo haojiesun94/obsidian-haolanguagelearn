@@ -883,6 +883,13 @@ class HaoLanguageLearnView extends ItemView {
     const sound = top.createEl("button", { cls: "hll-sound" });
     setIcon(sound, "volume-2");
     sound.title = "发音";
+    let pauseBtn = null;
+    if (!isStudy) {
+      pauseBtn = top.createEl("button", { cls: "hll-star hll-pause-ico" });
+      setIcon(pauseBtn, "bell-off");
+      pauseBtn.title = "移入无需复习（不会再排期）";
+      pauseBtn.onclick = () => this.pauseCurrent(word, gid);
+    }
 
     if (!isStudy) {
       const st = Math.min(Number(word.stage) || 0, 3);
@@ -983,16 +990,9 @@ class HaoLanguageLearnView extends ItemView {
       };
       const optsBox = card.createDiv({ cls: "hll-opts hll-opts-review" });
       this.mountMcq(optsBox, word, this.queue, (ok) => advance(ok));
-      const skip = actions.createEl("button", { cls: "hll-mini-link", text: "不再复习" });
-      skip.onclick = () => {
-        this.plugin.pauseWord(word.w, word.gid || gid);
-        this.plugin.removeWrong(word.w);
-        new Notice(`${word.w} 已移出复习（可在「复习曲线 → 无需复习」里拉回）`);
-        this.revealedCard = false;
-        this.queue.splice(this.idx, 1);
-        if (this.idx >= this.queue.length) this.idx = 0;
-        this.render();
-      };
+      const skip = actions.createEl("button", { cls: "hll-btn hll-pause-btn", text: "移入无需复习" });
+      skip.title = "这个词不再排期；以后可在「复习曲线 → 无需复习」里按 D2/D7/D30/D90 拉回来";
+      skip.onclick = () => this.pauseCurrent(word, gid);
     }
 
     prev.onclick = () => { if (this.idx > 0) { this.idx -= 1; this.revealedCard = false; this.render(); } };
@@ -1732,6 +1732,18 @@ class HaoLanguageLearnView extends ItemView {
     };
 
     this.drawPausedSection(parent, zhOf);
+  }
+
+  // 把当前复习的词移入无需复习库（图标与按钮共用）
+  pauseCurrent(word, gid) {
+    this.plugin.pauseWord(word.w, word.gid || gid);
+    this.plugin.removeWrong(word.w);
+    new Notice(`${word.w} 已移入无需复习（复习曲线页底部可拉回）`);
+    this.revealedCard = false;
+    const cur = this.queue[this.idx];
+    if (cur && cur.w === word.w) this.queue.splice(this.idx, 1);
+    if (this.idx >= this.queue.length) this.idx = 0;
+    this.render();
   }
 
   // 无需复习库：列出被暂停的词，可按阶段拉回
