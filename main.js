@@ -321,7 +321,7 @@ function shuffleArr(arr) {
 }
 
 // 选项里的短释义：只取第一段词性 + 前 3 个义项，长度拉平，避免「最长的就是答案」
-function shortZh(zh, maxItems = 3) {
+function shortZh(zh, maxItems = 5) {
   const POS = "名动形副介连代数量叹助拟复前冠缩";
   const segs = String(zh || "").split(/[\uFF1B;]/).map((x) => x.trim()).filter(Boolean);
   if (!segs.length) return "";
