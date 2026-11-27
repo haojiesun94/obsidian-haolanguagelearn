@@ -195,7 +195,8 @@ const DEFAULT_SETTINGS = {
   sceneFile: "",
   phraseFile: "",
   progressFile: "领域/学习/英语/学习进度.json",  // 学习进度（随 vault 同步；data.json 只放本机授权）
-  autoSpeak: false,      // 卡片出现时自动读一遍
+  autoSpeak: false,
+  reviewAdvance: "auto",        // 答完一题怎么走：auto 自动 / hold 停留几秒 / manual 手动点下一个      // 卡片出现时自动读一遍
   showPhonetic: true,    // 卡片上是否显示音标
   showMeaning: true,     // 卡片上是否显示中文释义（可随时「收起」）
   showExample: true,     // 卡片上是否显示例句
@@ -756,7 +757,8 @@ class HaoLanguageLearnView extends ItemView {
       } else {
         pool = group.words.filter((w) => !mastered.has(w.w)).map((w) => ({ ...w, gid }));
       }
-      if (!this.queue.length || this.currentGroupId !== poolKey) {
+      // 已作答但还没进入下一题时，冻结队列，避免 render() 把当前词直接挤掉（看不清释义）
+      if (!this._mcAnswered && (!this.queue.length || this.currentGroupId !== poolKey)) {
         this.queue = pool.slice();
         this.idx = 0;
         this.revealedCard = false;
@@ -979,20 +981,19 @@ class HaoLanguageLearnView extends ItemView {
         if (!ok) this.plugin.addWrong(word.w, word.gid || gid);   // 复习答错 → 进错题本，等抽查重练
         await this.plugin.saveData(this.plugin.data);
         this.render();                       // 先亮出正误 + 解锁释义
-        window.setTimeout(() => {
-          this._mcAnswered = null;
-          this.revealedCard = false;
-          const cur = this.queue[this.idx];
-          if (cur && cur.w === word.w) this.queue.splice(this.idx, 1);
-          if (this.idx >= this.queue.length) this.idx = 0;
-          this.render();
-        }, ok ? 780 : 1600);
+        const delay = this.advanceDelay(ok);
+        if (delay == null) return;           // 手动：等用户点「下一个」
+        window.setTimeout(() => this.finishCard(word), delay);
       };
       const optsBox = card.createDiv({ cls: "hll-opts hll-opts-review" });
       this.mountMcq(optsBox, word, this.queue, (ok) => advance(ok));
       const skip = actions.createEl("button", { cls: "hll-btn hll-pause-btn", text: "移入无需复习" });
       skip.title = "这个词不再排期；以后可在「复习曲线 → 无需复习」里按 D2/D7/D30/D90 拉回来";
       skip.onclick = () => this.pauseCurrent(word, gid);
+      if (this._mcAnswered === word.w) {
+        const goNext = actions.createEl("button", { cls: "hll-btn is-primary hll-next-btn", text: "下一个 →" });
+        goNext.onclick = () => this.finishCard(word);
+      }
     }
 
     prev.onclick = () => { if (this.idx > 0) { this.idx -= 1; this.revealedCard = false; this.render(); } };
@@ -1144,6 +1145,10 @@ class HaoLanguageLearnView extends ItemView {
     const actions = card.createDiv({ cls: "hll-actions" });
     const skip = actions.createEl("button", { cls: "hll-mini-link", text: "不会，跳过" });
     skip.onclick = () => { if (this._mcAnswered !== word.w) this.quizAnswer(word, false); };
+    if (this._mcAnswered === word.w) {
+      const goNext = actions.createEl("button", { cls: "hll-btn is-primary hll-next-btn", text: "下一个 →" });
+      goNext.onclick = () => this.finishQuiz(word);
+    }
   }
 
   // 抽查答题结果：对 → 出书/推进排期；错 → 进错题本、撤销掌握
@@ -1163,11 +1168,9 @@ class HaoLanguageLearnView extends ItemView {
       if (word.gid) this.plugin.addWrong(word.w, word.gid);
     }
     this.render();
-    window.setTimeout(() => {
-      this._mcAnswered = null;
-      if (this.quizList[this.quizIdx] && this.quizList[this.quizIdx].w === word.w) this.quizIdx += 1;
-      this.render();
-    }, ok ? 760 : 1600);
+    const delay = this.advanceDelay(ok);
+    if (delay == null) return;
+    window.setTimeout(() => this.finishQuiz(word), delay);
   }
 
   goNextGroup() {
@@ -1732,6 +1735,30 @@ class HaoLanguageLearnView extends ItemView {
     };
 
     this.drawPausedSection(parent, zhOf);
+  }
+
+  // 答完一题的推进方式：auto 自动 / hold 停留（看解释）/ manual 手动点下一个
+  advanceDelay(ok) {
+    const mode = (this.plugin.data.settings || {}).reviewAdvance || "auto";
+    if (mode === "manual") return null;
+    if (mode === "hold") return ok ? 4000 : 5500;
+    return ok ? 780 : 1600;
+  }
+
+  // 手动模式：去掉当前词、进入下一题
+  finishCard(word) {
+    this._mcAnswered = null;
+    this.revealedCard = false;
+    const cur = this.queue[this.idx];
+    if (cur && cur.w === word.w) this.queue.splice(this.idx, 1);
+    if (this.idx >= this.queue.length) this.idx = 0;
+    this.render();
+  }
+
+  finishQuiz(word) {
+    this._mcAnswered = null;
+    if (this.quizList[this.quizIdx] && this.quizList[this.quizIdx].w === word.w) this.quizIdx += 1;
+    this.render();
   }
 
   // 把当前复习的词移入无需复习库（图标与按钮共用）
@@ -2689,6 +2716,16 @@ class HaoLangSettingTab extends PluginSettingTab {
     const vNow = pickVoice(this.plugin.data.settings.voice === "male" ? "male" : "female");
     containerEl.createEl("p", { cls: "hll-set-desc",
       text: vNow ? `当前使用：${vNow.name}（${vNow.lang}）` : "当前使用：系统默认语音（没检测到英文语音，装了新的会自动选上）" });
+    new Setting(containerEl).setName("答完一题后").setDesc("想看清楚释义就选「停留」或「手动」")
+      .addDropdown((d) => d
+        .addOption("auto", "自动进入下一题（约 0.8 秒）")
+        .addOption("hold", "停留 4 秒再看下一题")
+        .addOption("manual", "手动：点「下一个 →」才走")
+        .setValue(this.plugin.data.settings.reviewAdvance || "auto")
+        .onChange(async (v) => {
+          this.plugin.data.settings.reviewAdvance = v;
+          await this.plugin.saveData(this.plugin.data);
+        }));
     new Setting(containerEl).setName("语速").setDesc("0.5 慢 — 1.0 正常")
       .addSlider((s) => s.setLimits(0.5, 1.4, 0.1).setValue(this.plugin.data.settings.rate)
         .setDynamicTooltip()
