@@ -541,3 +541,26 @@
 .hll-tile.is-test { border-color: color-mix(in srgb, #c9962b 45%, transparent); background: color-mix(in srgb, #c9962b 7%, transparent); }
 .hll-tile.is-test .hll-tile-meta { color: #a97b1d; font-weight: 600; font-size: 10px; }
 .hll-dot.is-test { background: #c9962b; }
+
+/* ===== 复习 / 抽查卡：固定版式，选完题不跳位 ===== */
+.hll-inner .hll-card.is-review,
+.hll-inner .hll-card.hll-card-quiz {
+  min-height: 520px; justify-content: flex-start; padding-top: 22px;
+}
+.hll-inner .hll-card.is-review .hll-word,
+.hll-inner .hll-card.hll-card-quiz .hll-word { margin-top: 8px; }
+.hll-inner .hll-card.is-review .hll-answer,
+.hll-inner .hll-card.hll-card-quiz .hll-answer {
+  height: 62px; margin-top: 14px; justify-content: flex-start;
+  overflow-y: auto; overflow-x: hidden; width: 100%; padding-right: 2px;
+}
+.hll-inner .hll-card.is-review .hll-hint,
+.hll-inner .hll-card.hll-card-quiz .hll-hint { margin-top: 10px; min-height: 18px; }
+.hll-inner .hll-card.is-review .hll-opts,
+.hll-inner .hll-card.hll-card-quiz .hll-opts { margin-top: 8px; min-height: 176px; }
+.hll-inner .hll-card.is-review .hll-opt,
+.hll-inner .hll-card.hll-card-quiz .hll-opt { height: 38px; padding-top: 0; padding-bottom: 0; }
+.hll-inner .hll-card.is-review .hll-opt-text,
+.hll-inner .hll-card.hll-card-quiz .hll-opt-text {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}

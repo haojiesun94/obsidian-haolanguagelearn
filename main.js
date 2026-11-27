@@ -864,7 +864,7 @@ class HaoLanguageLearnView extends ItemView {
     const word = this.queue[this.idx];
     if (!word) return;
     const isStudy = this.wordMode !== "review";
-    const card = stage.createDiv({ cls: "hll-card" });
+    const card = stage.createDiv({ cls: "hll-card" + (isStudy ? "" : " is-review") });
 
     // 顶部：上一个 · 计数 · 下一个 · 错题本 · 发音
     const top = card.createDiv({ cls: "hll-card-top" });
@@ -907,31 +907,34 @@ class HaoLanguageLearnView extends ItemView {
       : (always ? "读一遍，再决定要不要标记" : "鼠标移到卡片上就能看释义（不用点）");
     card.createDiv({ cls: "hll-hint", text: hintText });
 
-    // 例句（英文 + 中文翻译，默认显示 1 句，可展开）
-    if (this._exWord !== word.w) { this.showExamples = false; this._exWord = word.w; }
-    const exMap = await this.plugin.loadExamples();
-    const exs = this.plugin.data.settings.showExample === false ? [] : (Array.isArray(exMap[word.w]) ? exMap[word.w] : []);
-    if (exs.length) {
-      card.addClass("has-ex");
-      const exWrap = card.createDiv({ cls: "hll-examples" + (always ? "" : " is-ghost") });
-      const list = this.showExamples ? exs : exs.slice(0, 1);
-      list.forEach(([en, zh]) => {
-        const row = exWrap.createDiv({ cls: "hll-ex" });
-        const line = row.createDiv({ cls: "hll-ex-en" });
-        const txt = line.createSpan({ cls: "hll-ex-text" });
-        highlightWord(txt, en, word.w);
-        const sp = line.createEl("button", { cls: "hll-ex-sound" });
-        setIcon(sp, "volume-1");
-        sp.title = "读这句";
-        sp.onclick = (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.plugin.say(en, 0.95); };
-        row.createDiv({ cls: "hll-ex-zh", text: zh });
-      });
-      if (exs.length > 1) {
-        const more = card.createEl("button", {
-          cls: "hll-mini-link hll-ex-more",
-          text: this.showExamples ? "收起例句" : `更多例句 +${exs.length - 1}`,
+    // 例句只在学习模式展示；复习/抽查不展示，避免版式跳动
+    if (isStudy) {
+      // 例句（英文 + 中文翻译，默认显示 1 句，可展开）
+      if (this._exWord !== word.w) { this.showExamples = false; this._exWord = word.w; }
+      const exMap = await this.plugin.loadExamples();
+      const exs = this.plugin.data.settings.showExample === false ? [] : (Array.isArray(exMap[word.w]) ? exMap[word.w] : []);
+      if (exs.length) {
+        card.addClass("has-ex");
+        const exWrap = card.createDiv({ cls: "hll-examples" + (always ? "" : " is-ghost") });
+        const list = this.showExamples ? exs : exs.slice(0, 1);
+        list.forEach(([en, zh]) => {
+          const row = exWrap.createDiv({ cls: "hll-ex" });
+          const line = row.createDiv({ cls: "hll-ex-en" });
+          const txt = line.createSpan({ cls: "hll-ex-text" });
+          highlightWord(txt, en, word.w);
+          const sp = line.createEl("button", { cls: "hll-ex-sound" });
+          setIcon(sp, "volume-1");
+          sp.title = "读这句";
+          sp.onclick = (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.plugin.say(en, 0.95); };
+          row.createDiv({ cls: "hll-ex-zh", text: zh });
         });
-        more.onclick = (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.showExamples = !this.showExamples; this.render(); };
+        if (exs.length > 1) {
+          const more = card.createEl("button", {
+            cls: "hll-mini-link hll-ex-more",
+            text: this.showExamples ? "收起例句" : `更多例句 +${exs.length - 1}`,
+          });
+          more.onclick = (ev) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.showExamples = !this.showExamples; this.render(); };
+        }
       }
     }
 
