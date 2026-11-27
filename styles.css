@@ -560,12 +560,16 @@
 .hll-inner .hll-card.hll-card-quiz .hll-opts { margin-top: 8px; min-height: 224px; max-width: none; }
 .hll-inner .hll-card.is-review .hll-opt,
 .hll-inner .hll-card.hll-card-quiz .hll-opt {
-  height: 50px; padding: 6px 14px; justify-content: center; align-items: baseline; gap: 7px;
+  position: relative; height: 50px; padding: 0 46px;
+  justify-content: center; align-items: center; text-align: center;
 }
+/* 词性芯片钉在左边，释义文字在整条按钮里水平居中 */
 .hll-inner .hll-card.is-review .hll-opt-pos,
-.hll-inner .hll-card.hll-card-quiz .hll-opt-pos { flex: 0 0 auto; }
+.hll-inner .hll-card.hll-card-quiz .hll-opt-pos {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%); margin: 0;
+}
 .hll-inner .hll-card.is-review .hll-opt-text,
 .hll-inner .hll-card.hll-card-quiz .hll-opt-text {
-  flex: 0 1 auto; white-space: normal; text-align: center; overflow: hidden;
+  flex: 1 1 auto; width: 100%; white-space: normal; text-align: center; overflow: hidden;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.4;
 }
