@@ -985,8 +985,10 @@ class HaoLanguageLearnView extends ItemView {
       this.mountMcq(optsBox, word, this.queue, (ok) => advance(ok));
       const skip = actions.createEl("button", { cls: "hll-mini-link", text: "不再复习" });
       skip.onclick = () => {
-        this.plugin.unmarkMastered(word.gid, word.w);
+        this.plugin.pauseWord(word.w, word.gid || gid);
         this.plugin.removeWrong(word.w);
+        new Notice(`${word.w} 已移出复习（可在「复习曲线 → 无需复习」里拉回）`);
+        this.revealedCard = false;
         this.queue.splice(this.idx, 1);
         if (this.idx >= this.queue.length) this.idx = 0;
         this.render();
@@ -1691,6 +1693,7 @@ class HaoLanguageLearnView extends ItemView {
     parent.createDiv({ cls: "hll-sec-title", text: `复习安排（${dates.length} 天）` });
     if (!dates.length) {
       parent.createDiv({ cls: "hll-empty", text: "还没有排期：去「单词学习」标记一些「记住了」，这里就会自动排出来。" });
+      this.drawPausedSection(parent, zhOf);
       return;
     }
     const list = parent.createDiv({ cls: "hll-days" });
@@ -1727,6 +1730,40 @@ class HaoLanguageLearnView extends ItemView {
       this.currentGroupId = 0;
       this.render();
     };
+
+    this.drawPausedSection(parent, zhOf);
+  }
+
+  // 无需复习库：列出被暂停的词，可按阶段拉回
+  drawPausedSection(parent, zhOf) {
+    const list = this.plugin.pausedList();
+    const box = parent.createDiv({ cls: "hll-paused" });
+    const head = box.createDiv({ cls: "hll-paused-head" });
+    head.createSpan({ cls: "hll-sec-title", text: `无需复习（${list.length}）` });
+    head.createSpan({ cls: "hll-muted", text: "点 D2 / D7 / D30 / D90 拉回复习池，从该阶段重新排队" });
+    if (!list.length) {
+      box.createDiv({ cls: "hll-empty", text: "复习时点「不再复习」的词会进这里，随时能拉回来。" });
+      return;
+    }
+    list.sort((a, b) => a.word.localeCompare(b.word));
+    const rows = box.createDiv({ cls: "hll-paused-list" });
+    list.forEach((it) => {
+      const row = rows.createDiv({ cls: "hll-paused-row" });
+      const left = row.createDiv({ cls: "hll-paused-left" });
+      left.createSpan({ cls: "hll-paused-w", text: it.word });
+      const zh = zhOf ? zhOf.get(it.word) : "";
+      if (zh) left.createSpan({ cls: "hll-paused-zh", text: String(zh).split(/[；;,，]/)[0].slice(0, 16) });
+      const btnBox = row.createDiv({ cls: "hll-paused-stages" });
+      SRS_LABELS.forEach((label, i) => {
+        const b = btnBox.createEl("button", { cls: "hll-paused-btn", text: label });
+        b.title = `拉回复习池，排在${SRS_NODE_NAMES[i]}`;
+        b.onclick = () => {
+          this.plugin.resumeWord(it.word, i);
+          new Notice(`${it.word} 已拉回复习池（${label}）`);
+          this.render();
+        };
+      });
+    });
   }
 
   /* ================= 语法 ================= */
@@ -2191,6 +2228,38 @@ module.exports = class HaoLanguageLearn extends Plugin {
     return Object.keys(m).some((g) => (m[g] || []).includes(word));
   }
 
+  // ===== 无需复习库 =====
+  _paused() {
+    return (this.data.progress.paused = this.data.progress.paused || {});
+  }
+
+  pauseWord(word, gid) {
+    const p = this._paused();
+    const g = Number(gid) || ((this._srs()[word] || {}).gid) || 0;
+    p[word] = { gid: g, at: dateStr() };
+    this.dropSrs(word);                 // 撤掉排期，复习池里不再出现
+    this.saveData(this.data);
+    return p[word];
+  }
+
+  // 从无需复习库拉回复习池，并指定所在阶段（0=D2 1=D7 2=D30 3=D90）
+  resumeWord(word, stageIdx) {
+    const p = this._paused();
+    const gid = Number((p[word] || {}).gid) || 0;
+    delete p[word];
+    const t = dateStr();
+    const st = Math.min(Math.max(Number(stageIdx) || 0, 0), SRS_STEPS.length - 1);
+    const srs = this._srs();
+    srs[word] = { gid, stage: st, base: t, last: t, next: addDays(t, SRS_STEPS[st]), reps: 0, lapses: 0 };
+    this.saveData(this.data);
+    return srs[word];
+  }
+
+  pausedList() {
+    const p = this._paused();
+    return Object.keys(p).map((w) => ({ word: w, gid: Number(p[w].gid) || 0, at: p[w].at || "" }));
+  }
+
   dropSrs(word) {
     const srs = this._srs();
     if (srs[word]) delete srs[word];
@@ -2199,9 +2268,11 @@ module.exports = class HaoLanguageLearn extends Plugin {
   // 今天到期（含逾期），按到期日早的在前
   dueList() {
     const srs = this._srs();
+    const paused = this.data.progress.paused || {};
     const t = dateStr();
     const out = [];
     Object.keys(srs).forEach((w) => {
+      if (paused[w]) return;
       const e = srs[w] || {};
       const next = e.next || t;
       if (next <= t) out.push({ word: w, gid: e.gid || 0, stage: Math.min(Number(e.stage) || 0, 3),
@@ -2213,10 +2284,12 @@ module.exports = class HaoLanguageLearn extends Plugin {
 
   dueCounts() {
     const srs = this._srs();
+    const paused = this.data.progress.paused || {};
     const t = dateStr();
     const tm = addDays(t, 1);
     const out = { total: 0, steps: [0, 0, 0, 0], tomorrow: 0, scheduled: 0 };
     Object.keys(srs).forEach((w) => {
+      if (paused[w]) return;
       const e = srs[w] || {};
       const next = e.next || t;
       out.scheduled += 1;
@@ -2304,7 +2377,9 @@ module.exports = class HaoLanguageLearn extends Plugin {
         const g = byId.get(Number(gid));
         if (!g) return;
         const list = (mastered[gid] = mastered[gid] || []);
+        const paused = p.paused || {};
         (g.words || []).forEach((w) => {
+          if (paused[w.w]) return;
           if (!list.includes(w.w)) {
             list.push(w.w);
             try { this.scheduleMaster(Number(gid), w.w); } catch (e) { /* 排期失败不影响标记 */ }
