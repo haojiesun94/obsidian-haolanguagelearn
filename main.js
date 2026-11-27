@@ -1092,10 +1092,11 @@ class HaoLanguageLearnView extends ItemView {
     }
     const onlyWrong = wrongs.length > 0;
     const src = onlyWrong ? wrongs : ((group && group.words) || []).map((w) => ({ w: w.w }));
+    const paused = this.plugin.data.progress.paused || {};
     const items = src.map((it) => {
       const w = byWord.get(it.w) || {};
       return { w: it.w, ph: w.ph || "", zh: w.zh || "", gid, fromWrong: onlyWrong };
-    }).filter((x) => x.zh);
+    }).filter((x) => x.zh && !paused[x.w]);
     if (!items.length) { new Notice("这组的词在词库里找不到释义"); return; }
     this.startQuizItems(items, onlyWrong ? `错题 · 卡组 #${gid}` : `测试 · 卡组 #${gid}`, gid);
   }
@@ -1143,6 +1144,9 @@ class HaoLanguageLearnView extends ItemView {
     this.mountMcq(optsBox, word, this.quizList, (ok) => this.quizAnswer(word, ok));
 
     const actions = card.createDiv({ cls: "hll-actions" });
+    const pauseQ = actions.createEl("button", { cls: "hll-btn hll-pause-btn", text: "移入无需复习" });
+    pauseQ.title = "这个词不再排期；以后可在「复习曲线 → 无需复习」里按 D2/D7/D30/D90 拉回来";
+    pauseQ.onclick = () => this.pauseQuizCurrent(word);
     const skip = actions.createEl("button", { cls: "hll-mini-link", text: "不会，跳过" });
     skip.onclick = () => { if (this._mcAnswered !== word.w) this.quizAnswer(word, false); };
     if (this._mcAnswered === word.w) {
@@ -1168,9 +1172,8 @@ class HaoLanguageLearnView extends ItemView {
       if (word.gid) this.plugin.addWrong(word.w, word.gid);
     }
     this.render();
-    const delay = this.advanceDelay(ok);
-    if (delay == null) return;
-    window.setTimeout(() => this.finishQuiz(word), delay);
+    // 测试模式：选对就直接进下一题；选错留 2 秒看正确答案
+    window.setTimeout(() => this.finishQuiz(word), ok ? 700 : 2000);
   }
 
   goNextGroup() {
@@ -1756,6 +1759,16 @@ class HaoLanguageLearnView extends ItemView {
   }
 
   finishQuiz(word) {
+    this._mcAnswered = null;
+    if (this.quizList[this.quizIdx] && this.quizList[this.quizIdx].w === word.w) this.quizIdx += 1;
+    this.render();
+  }
+
+  // 测试里把当前词移入无需复习库
+  pauseQuizCurrent(word) {
+    this.plugin.pauseWord(word.w, word.gid);
+    this.plugin.removeWrong(word.w);
+    new Notice(`${word.w} 已移入无需复习（复习曲线页底部可拉回）`);
     this._mcAnswered = null;
     if (this.quizList[this.quizIdx] && this.quizList[this.quizIdx].w === word.w) this.quizIdx += 1;
     this.render();
