@@ -724,13 +724,16 @@ class HaoLanguageLearnView extends ItemView {
     if (!wrongCount) wrongBtn.title = "还没有错题，卡片上点 ☆ 可以加入";
     const groupWrong = this.plugin.wrongWordsOf(gid).length;
     const groupPassed = !!this.plugin.data.progress.done[gid];
+    const pausedInGroup = (group.words || []).filter((w) => (this.plugin.data.progress.paused || {})[w.w]).length;
+    const activeCount = (group.words || []).length - pausedInGroup;
     const quizBtn = right.createEl("button", {
-      cls: "hll-btn" + (groupPassed ? "" : " is-primary"),
-      text: groupWrong ? `错题抽查 ${groupWrong}` : (groupPassed ? "再测一遍" : `开始测试 ${group.words.length}`),
+      cls: "hll-btn" + (groupPassed && !groupWrong ? "" : " is-primary"),
+      text: groupWrong ? `错题抽查 ${groupWrong}` : (groupPassed ? "重新测试" : `开始测试 ${activeCount}`),
     });
     quizBtn.title = groupWrong
       ? "只测这一组的错题；全对即通过，这组完成"
-      : (groupPassed ? "这组已通过，想复核可以再测一遍" : "学完必须测一遍，全对才算完成");
+      : (groupPassed ? "这组已经通过，不用再测；点这里只是主动复核" : `测 ${activeCount} 个词（${pausedInGroup} 个在无需复习库）；全对才算完成`);
+    if (groupPassed) left.createSpan({ cls: "hll-badge", text: "✓ 已测试通过" });
     const nextBtn = right.createEl("button", { cls: "hll-btn is-primary", text: "下一组 →" });
     nextBtn.disabled = !groupPassed;
     if (nextBtn.disabled) nextBtn.title = mastered.size < group.words.length ? "先把这一组全部标记为「记住了」" : "先做测试，全对才算完成";
@@ -787,11 +790,14 @@ class HaoLanguageLearnView extends ItemView {
       doneBox.createDiv({ cls: "hll-muted", text: passed
         ? (qz.total ? `测试成绩 ${qz.right}/${qz.total}（${qz.total >= group.words.length ? "整组测试" : "错题抽查"}）· 通过` : "测试已通过")
         : (dn ? `还差测试：先考这 ${dn} 个错题，全对就完成。` : `还差一次测试：整组 ${group.words.length} 题，全对才算完成。`) });
-      const b = doneBox.createEl("button", { cls: "hll-btn is-primary", text: passed ? "再测一遍" : (dn ? `错题抽查 ${dn}` : "开始测试") });
+      const startLabel = dn ? `错题抽查 ${dn}` : `开始测试 ${activeCount}`;
+      const b = doneBox.createEl("button", { cls: "hll-btn" + (passed ? "" : " is-primary"), text: passed ? "重新测试" : startLabel });
       b.onclick = () => { this.startQuiz(group, gid); };
       if (passed) {
-        const nb = doneBox.createEl("button", { cls: "hll-btn", text: "下一组 →" });
+        b.removeClass("is-primary");
+        const nb = doneBox.createEl("button", { cls: "hll-btn is-primary", text: "下一组 →" });
         nb.onclick = () => this.goNextGroup();
+        doneBox.createDiv({ cls: "hll-muted hll-done-tip", text: "这组已经完成，不需要重复测试；上面的「重新测试」只是主动复核。" });
       }
     } else if (this.queue.length === 0) {
       // 复习池为空等边缘情况
@@ -1100,8 +1106,13 @@ class HaoLanguageLearnView extends ItemView {
       const w = byWord.get(it.w) || {};
       return { w: it.w, ph: w.ph || "", zh: w.zh || "", gid, fromWrong: onlyWrong };
     }).filter((x) => x.zh && !paused[x.w]);
-    if (!items.length) { new Notice("这组的词在词库里找不到释义"); return; }
-    this.startQuizItems(items, onlyWrong ? `错题 · 卡组 #${gid}` : `测试 · 卡组 #${gid}`, gid);
+    const skipped = src.length - items.length;
+    if (!items.length) {
+      new Notice(`卡组 #${gid} 的词都在无需复习库里，没有可测的内容`);
+      return;
+    }
+    if (skipped > 0 && !onlyWrong) new Notice(`本组 ${skipped} 个词在无需复习库，本次测 ${items.length} 个`);
+    this.startQuizItems(items, `${onlyWrong ? "错题" : "测试"} · 卡组 #${gid} · ${items.length} 词`, gid);
   }
 
   drawQuiz(stage, group, gid) {
